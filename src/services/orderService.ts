@@ -2,8 +2,9 @@ import { Op, Sequelize } from "sequelize";
 import { Cart, Cartitem, Coupon, Couponitem, CouponUsage, Order,Orderitem, Product, StripeCustomer } from "../models";
 import ApiError from "../utils/apiError";
 import sequelize from "../config/db";
-import { createCharge, saveCardToCustomer } from "./stripeService";
+import { createCharge, refundCharge, saveCardToCustomer } from "./stripeService";
 import UserCard from "../models/userCardModel";
+import Stripe from "stripe";
 
 enum OrderStatus {
     PENDING = 'Pending',
@@ -296,15 +297,42 @@ export const cancelOrder = async(userId:number,orderId:number) => {
             where:{
                 user_id:userId,
                 order_id:orderId,
-                status:{[Op.or]:[OrderStatus.PENDING]}
             },
-            attributes:['order_id','total_amount','status'],
             transaction:t,
             lock:t.LOCK.UPDATE,
         });
         if(!order) throw new ApiError('Order Not exist',400);
 
-        //change the status
+        // Only confirmed orders can be refunded
+        if(order.status !== OrderStatus.CONFIRM){
+            throw new ApiError("Only Confirmed order can be refunded",400);
+        }
+
+        //charge_id must exist
+        if(!order.charge_id){
+            throw new ApiError("No payment found for this order",400);
+        }
+
+        //Already refunded or not
+        if(order.refund_id){
+            throw new ApiError("Order already refunded",400);
+        }
+
+        //create refund in Stripe
+        let refund:Stripe.Refund;
+        try {
+            refund = await refundCharge(order.charge_id);
+        } catch (err:any) {
+            throw new ApiError(err.message || "Refund Error",400);
+        }
+
+        //check the refund status
+        if(refund.status !== 'succeeded'){
+            throw new ApiError("Refund Failed, Please try again",400);
+        }
+
+        //update the order
+        order.refund_id = refund.id;
         order.status = OrderStatus.CANCEL;
         await order.save({transaction:t});
         
@@ -341,11 +369,12 @@ export const deliverOrder = async(orderId:number) => {
         //check order exist or not  
         const order = await Order.findOne({
             where:{order_id:orderId,status:OrderStatus.CONFIRM},
-            attributes:['order_id','total_amount','status'],
+            attributes:['order_id','total_amount','status','charge_id'],
             transaction:t,
             lock:t.LOCK.UPDATE,
         });
         if(!order) throw new ApiError('Order Not Found',404);
+        if(!order.charge_id) throw new ApiError("Payment Due",400);
 
         order.status = OrderStatus.DELIVER;
         await order.save({transaction:t});
