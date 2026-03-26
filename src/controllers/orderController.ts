@@ -83,7 +83,12 @@ export const cancelOrder = async(
     try {
         const orderId = Number(req.params.id);
         const userId = req.user.id;
-        const data = await orderService.cancelOrder(userId,orderId);
+        const order = await orderService.cancelOrder(userId,orderId);
+        const data = {
+            order_id:order.order_id,
+            refund_id:order.refund_id,
+            amount:order.total_amount
+        }
         successResponse(res,"Cancelled order successfully",200,data);
     } catch (err:any) {
         next(err)

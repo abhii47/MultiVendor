@@ -7,6 +7,7 @@ class Order extends Model<InferAttributes<Order>,InferCreationAttributes<Order>>
     declare total_amount:number;
     declare status:'Pending'|'Confirmed'|'Cancelled'|'Delivered';
     declare charge_id:CreationOptional<string>;
+    declare refund_id:CreationOptional<string>;
 }
 
 Order.init({
@@ -28,6 +29,10 @@ Order.init({
         defaultValue:'Pending'
     },
     charge_id:{
+        type:DataTypes.STRING,
+        allowNull:true
+    },
+    refund_id:{
         type:DataTypes.STRING,
         allowNull:true
     }
