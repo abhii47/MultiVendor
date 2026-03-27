@@ -15,6 +15,8 @@ import Couponitem from "./couponitemModel";
 import CouponUsage from "./couponUsageModel";
 import StripeCustomer from "./stripeCustmorModel";
 import UserCard from "./userCardModel";
+import Refund from "./refundModel";
+import RefundItem from "./refundItemModel";
 
 
 //create Association
@@ -99,6 +101,22 @@ StripeCustomer.belongsTo(User,{foreignKey:'user_id'});
 User.hasMany(UserCard,{foreignKey:'user_id'});
 UserCard.belongsTo(User,{foreignKey:'user_id'});
 
+//Order -> Refund (1-N)
+Order.hasMany(Refund,{foreignKey:'order_id'});
+Refund.belongsTo(Order,{foreignKey:'order_id'});
+
+//User -> Refund (1-N)
+User.hasMany(Refund,{foreignKey:'vendor_id'});
+Refund.belongsTo(User,{foreignKey:'vendor_id'});
+
+//Refund -> RefundItem (1-N)
+Refund.hasMany(RefundItem,{foreignKey:'refund_id'});
+RefundItem.belongsTo(Refund,{foreignKey:'refund_id'});
+
+//Orderitem -> RefundItem (1-N)
+Orderitem.hasMany(RefundItem,{foreignKey:'orderitem_id'});
+RefundItem.belongsTo(Orderitem,{foreignKey:'orderitem_id'});
+
 
 
 export {
@@ -118,5 +136,7 @@ export {
     Couponitem,
     CouponUsage,
     StripeCustomer,
-    UserCard
+    UserCard,
+    Refund,
+    RefundItem
 };
