@@ -5,6 +5,7 @@ import sequelize from "../config/db";
 import { createCharge, refundCharge, saveCardToCustomer } from "./stripeService";
 import UserCard from "../models/userCardModel";
 import Stripe from "stripe";
+import { createRefund, createRefunditem } from "./refundService";
 
 enum OrderStatus {
     PENDING = 'Pending',
@@ -12,6 +13,26 @@ enum OrderStatus {
     CANCEL = 'Cancelled',
     DELIVER = 'Delivered'
 
+}
+enum PaymentStatus {
+    PENDING = 'Pending',
+    PAID = 'Paid',
+    PARTIALREFUND = 'PartiallyRefunded',
+    REFUND = 'Refunded'
+}
+enum OrderItemStatus {
+    PENDING = 'Pending',
+    CONFIRM = 'Confirmed',
+    CANCEL = 'Cancelled',
+    DELIVER = 'Delivered'
+}
+enum RefundType {
+    FULL = 'Full',
+    PARTIAL = 'Partial'
+}
+enum RefundStatus {
+    SUCCESS = 'Processed',
+    FAIL = 'Failed'
 }
 
 export const createOrder = async(userId:number,couponCode?:string) => {
@@ -58,7 +79,7 @@ export const createOrder = async(userId:number,couponCode?:string) => {
                 'quantity',
                 [Sequelize.literal('Product.price*Cartitem.quantity'),'productPrice'],
             ],
-            include:[{model:Product,attributes:[]}],
+            include:[{model:Product,attributes:['price']}],
             transaction:t,
             lock:t.LOCK.UPDATE
         });
@@ -106,14 +127,55 @@ export const createOrder = async(userId:number,couponCode?:string) => {
             user_id:userId,
             total_amount:totalAmount,
             status:OrderStatus.PENDING,
+            payment_status:PaymentStatus.PENDING,
+            coupon_id:coupon?.coupon_id
         },{transaction:t});
-
+        
         //data for orderitems
-        const orderData = cartitems.map((item)=>({
-                order_id:order.order_id,
-                product_id:item.product_id,
-                quantity:item.quantity,
-        }))
+        const actualItemPrice = (coupon:Coupon,amount:number,orderSubtotal:number) => {
+            if(coupon.coupon_type === 'Percentage'){
+                return amount -= amount*(coupon.amount/100);
+            }
+            const totalDiscount = Math.min(coupon.amount,orderSubtotal);
+            const itemDiscount = (amount/orderSubtotal)*totalDiscount;
+            return amount - itemDiscount
+        }
+
+        let orderData;
+        if(coupon){
+            //for proportional distrubution of discount at Fixed 
+            const orderSubtotal = cartitems.reduce((sum, item) => {
+                const unitPrice = Number(item.Product?.price || 0);
+                return sum + unitPrice * item.quantity;
+            }, 0);
+
+            orderData = cartitems.map((item)=>{
+                const unitPrice = Number(item.Product?.price || 0);
+                const lineTotal = unitPrice * item.quantity;
+                const total_amount = actualItemPrice(coupon,lineTotal,orderSubtotal);
+                    return {
+                    order_id:order.order_id,
+                    product_id:item.product_id,
+                    quantity:item.quantity,
+                    unit_price:unitPrice,
+                    total_amount,
+                    status:OrderItemStatus.PENDING
+                }
+            });
+        }else{
+            orderData = cartitems.map((item)=>{
+                const unitPrice = Number(item.Product?.price || 0);
+                
+                    return {
+                    order_id:order.order_id,
+                    product_id:item.product_id,
+                    quantity:item.quantity,
+                    unit_price:unitPrice,
+                    total_amount:unitPrice*item.quantity,
+                    status:OrderItemStatus.PENDING
+                }
+            });
+        }
          
         if(coupon){
             coupon.max_user_limit -= 1
@@ -218,7 +280,7 @@ export const createPayment = async(userId:number,body:paymentBody) => {
         if(order.charge_id) throw new ApiError("Order already paid!",400);
 
         // also check the status if that order cancelled then 
-        if(order.status !== OrderStatus.PENDING) throw new ApiError("Order can.t be paid",400);
+        if(order.status !== OrderStatus.PENDING) throw new ApiError("Order can't be paid",400);
 
         //customer have stripe id exist or not
         const customer = await StripeCustomer.findOne({
@@ -247,8 +309,19 @@ export const createPayment = async(userId:number,body:paymentBody) => {
         }
 
         if(charge.status === 'succeeded'){
+            // update orderitems status
+            await Orderitem.update(
+                {status:OrderItemStatus.CONFIRM},
+                {
+                    where:{order_id:order.order_id},
+                    transaction:t
+                }
+            );
+
+            // update the order status
             order.charge_id = charge.id,
             order.status = OrderStatus.CONFIRM;
+            order.payment_status = PaymentStatus.PAID;
             await order.save({transaction:t});
             return order;
         }
@@ -272,7 +345,8 @@ export const getOrder = async(userId:number) => {
                     model:Orderitem,
                     attributes:[
                         'quantity',
-                        [Sequelize.literal('`Orderitems->Product`.`price` * `Orderitems`.`quantity`'),'Price']
+                        'unit_price',
+                        'total_amount'
                     ],
                     include:[
                         {
@@ -290,9 +364,80 @@ export const getOrder = async(userId:number) => {
 }
 
 export const cancelOrder = async(userId:number,orderId:number) => {
+        //fetch order for refund
+        const order = await Order.findOne({
+            where:{
+                user_id:userId,
+                order_id:orderId,
+            },
+        });
+        if(!order) throw new ApiError('Order Not exist',400);
+
+        // Only confirmed orders can be refunded and cancelled
+        if(order.status !== OrderStatus.CONFIRM){
+            throw new ApiError("Only Confirmed order can be cancelled",400);
+        }
+
+        //charge_id must exist
+        if(!order.charge_id){
+            throw new ApiError("No payment found for this order",400);
+        }
+
+        //Already refunded or not
+        if(order.payment_status === PaymentStatus.REFUND){
+            throw new ApiError("Order already refunded",400);
+        }
+
+        //create refund in Stripe
+        let refundStripe:Stripe.Refund;
+        try {
+            refundStripe = await refundCharge(order.charge_id);
+        } catch (err:any) {
+            throw new ApiError(err.message || "Refund Error",400);
+        }
+
+        //check the refund status
+        if(refundStripe.status !== 'succeeded'){
+            //save Refund in DB
+            await createRefund(
+                refundStripe.id,
+                order.order_id,
+                order.total_amount,
+                "User doesn't want order",
+                RefundType.FULL,
+                RefundStatus.FAIL
+            );
+            throw new ApiError("Refund Failed, Please try again",400);
+        }
+
+        //save Refund in DB
+        const refund = await createRefund(
+            refundStripe.id,
+            order.order_id,
+            order.total_amount,
+            "User doesn't want order",
+            RefundType.FULL,
+            RefundStatus.SUCCESS
+        );
+
+        //fetch order items for refunditems
+        const orderitem = await Orderitem.findAll({
+            where:{order_id:order.order_id}
+        });
+
+        for(const item of orderitem){
+            await createRefunditem(
+                refund.refund_id,
+                item.orderitem_id,
+                item.total_amount
+            )
+        };
+    
+        
+    //After Refund DB Actions
     const result = await sequelize.transaction(async(t)=>{
 
-        //check user has that order or not and only pending order can be cancelled
+        //check user has that order or not
         const order = await Order.findOne({
             where:{
                 user_id:userId,
@@ -303,38 +448,29 @@ export const cancelOrder = async(userId:number,orderId:number) => {
         });
         if(!order) throw new ApiError('Order Not exist',400);
 
-        // Only confirmed orders can be refunded
-        if(order.status !== OrderStatus.CONFIRM){
-            throw new ApiError("Only Confirmed order can be refunded",400);
-        }
-
-        //charge_id must exist
-        if(!order.charge_id){
-            throw new ApiError("No payment found for this order",400);
-        }
-
-        //Already refunded or not
-        if(order.refund_id){
-            throw new ApiError("Order already refunded",400);
-        }
-
-        //create refund in Stripe
-        let refund:Stripe.Refund;
-        try {
-            refund = await refundCharge(order.charge_id);
-        } catch (err:any) {
-            throw new ApiError(err.message || "Refund Error",400);
-        }
-
-        //check the refund status
-        if(refund.status !== 'succeeded'){
-            throw new ApiError("Refund Failed, Please try again",400);
-        }
-
         //update the order
-        order.refund_id = refund.id;
+        order.payment_status = PaymentStatus.REFUND;
+        order.refunded_amount = order.total_amount;
         order.status = OrderStatus.CANCEL;
         await order.save({transaction:t});
+
+        //if coupon apply on this order then restore user limit
+        if(order.coupon_id){
+            const coupon = await Coupon.findByPk(order.coupon_id,{
+                transaction:t,
+                lock:t.LOCK.UPDATE,
+            });
+            if(coupon){
+                coupon.max_user_limit += 1;
+                await coupon.save({transaction:t});
+            };
+            await CouponUsage.destroy({
+                where:{
+                    coupon_id:order.coupon_id,
+                    user_id:userId
+                },transaction:t
+            });
+        }
         
         //fetch all the items of that order
         const orderitems = await Orderitem.findAll({
@@ -358,6 +494,19 @@ export const cancelOrder = async(userId:number,orderId:number) => {
             product.is_available = product.quantity>0;
             await product.save({transaction:t});
         }
+
+        //update the orderitem status
+        await Orderitem.update(
+            {
+                status:'Cancelled',
+                refunded_amount:sequelize.col('total_amount'),
+            },
+            {
+                where:{order_id:order.order_id},
+                transaction:t
+            }
+        );
+
         return order;
     });
     return result;
@@ -374,10 +523,21 @@ export const deliverOrder = async(orderId:number) => {
             lock:t.LOCK.UPDATE,
         });
         if(!order) throw new ApiError('Order Not Found',404);
-        if(!order.charge_id) throw new ApiError("Payment Due",400);
+        if(!order.charge_id || order.payment_status !== PaymentStatus.PAID) throw new ApiError("Payment Due",400);
 
         order.status = OrderStatus.DELIVER;
         await order.save({transaction:t});
+
+        await Orderitem.update(
+            {status:OrderItemStatus.DELIVER},
+            {
+                where:{
+                    order_id:orderId,
+                    status:OrderItemStatus.CONFIRM,
+                },
+                transaction:t,
+            }
+        );
 
         return order;
     });
