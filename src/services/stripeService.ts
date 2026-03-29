@@ -44,6 +44,15 @@ export const refundCharge = async(chargeId:string) => {
         return refund;
 }
 
+export const partialRefundCharge = async(chargeId:string,amount:number) => {
+    const refund = await stripe.refunds.create({
+        charge:chargeId,
+        amount:amount*100
+    });
+    return refund;
+}
+
+
 // this is for paymentIntent Which directly succeded if we create this
 // export const createPyementIntent = async(amount:number,customerId:string) => {
 //     const paymentIntent = await stripe.paymentIntents.create({

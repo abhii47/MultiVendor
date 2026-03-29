@@ -2,7 +2,7 @@ import { Op, Sequelize } from "sequelize";
 import { Cart, Cartitem, Coupon, Couponitem, CouponUsage, Order,Orderitem, Product, StripeCustomer } from "../models";
 import ApiError from "../utils/apiError";
 import sequelize from "../config/db";
-import { createCharge, refundCharge, saveCardToCustomer } from "./stripeService";
+import { createCharge, partialRefundCharge, refundCharge, saveCardToCustomer } from "./stripeService";
 import UserCard from "../models/userCardModel";
 import Stripe from "stripe";
 import { createRefund, createRefunditem } from "./refundService";
@@ -11,7 +11,8 @@ enum OrderStatus {
     PENDING = 'Pending',
     CONFIRM = 'Confirmed',
     CANCEL = 'Cancelled',
-    DELIVER = 'Delivered'
+    DELIVER = 'Delivered',
+    RETURN = 'Returned'
 
 }
 enum PaymentStatus {
@@ -24,7 +25,8 @@ enum OrderItemStatus {
     PENDING = 'Pending',
     CONFIRM = 'Confirmed',
     CANCEL = 'Cancelled',
-    DELIVER = 'Delivered'
+    DELIVER = 'Delivered',
+    RETURN = 'Returned'
 }
 enum RefundType {
     FULL = 'Full',
@@ -346,7 +348,8 @@ export const getOrder = async(userId:number) => {
                     attributes:[
                         'quantity',
                         'unit_price',
-                        'total_amount'
+                        'total_amount',
+                        'status'
                     ],
                     include:[
                         {
@@ -518,7 +521,7 @@ export const deliverOrder = async(orderId:number) => {
         //check order exist or not  
         const order = await Order.findOne({
             where:{order_id:orderId,status:OrderStatus.CONFIRM},
-            attributes:['order_id','total_amount','status','charge_id'],
+            attributes:['order_id','total_amount','status','charge_id','payment_status'],
             transaction:t,
             lock:t.LOCK.UPDATE,
         });
@@ -544,4 +547,185 @@ export const deliverOrder = async(orderId:number) => {
     return result;
 }
 
-export default {createOrder, addCard, createPayment, getOrder, cancelOrder, deliverOrder};
+type returnBody = {
+    orderId:number,
+    reason:string,
+    productId?:number,
+}
+export const returnOrder = async(userId:number,body:returnBody) => {
+    const {orderId,productId,reason} = body;
+    const order = await Order.findOne({
+        where:{order_id:orderId,user_id:userId},
+    });
+    if(!order) throw new ApiError('Order Not Found',404);
+
+    //if order is not delivered then return order is not allowed
+    if(order.status !== OrderStatus.DELIVER){
+        throw new ApiError("Order Not Delivered Yet or Cancelled",400);
+    }
+
+    // if payment is paid or partially refunded then only return order is allowed
+    if( 
+        order.payment_status !== PaymentStatus.PAID && 
+        order.payment_status !== PaymentStatus.PARTIALREFUND
+    ) throw new ApiError("Payment Due",400);
+    
+    // if orderitemId is provided then check if the orderitem exists and belongs to the order
+    if(productId){
+        const orderitem = await Orderitem.findOne({
+            where:{product_id:productId,order_id:orderId},
+        });  
+        if(!orderitem)throw new ApiError("Wrong Orderitem Entered",404);
+        if(orderitem.status === OrderItemStatus.RETURN){
+            throw new ApiError("Orderitem Alredy Return",400);
+        }
+
+        // Restore product stock (same approach as cancel flow)
+        const product = await Product.findByPk(orderitem.product_id);
+        if(product){
+            product.quantity += orderitem.quantity;
+            product.is_available = product.quantity > 0;
+            await product.save();
+        }
+
+        // update item status
+        orderitem.status = OrderItemStatus.RETURN;
+        orderitem.refunded_amount = orderitem.total_amount;
+        await orderitem.save();
+
+         //check total amount 
+         const totalAmount = await Orderitem.sum('total_amount',{
+            where:{status:OrderItemStatus.RETURN,order_id:orderId}
+        });
+
+        const returnedPaise = Math.round(Number(totalAmount || 0) * 100);
+        const orderPaise = Math.round(Number(order.total_amount || 0) * 100);
+        const PaymentType = returnedPaise >= orderPaise ? RefundType.FULL : RefundType.PARTIAL;
+        if(PaymentType === RefundType.PARTIAL){
+            order.payment_status = PaymentStatus.PARTIALREFUND;
+        }else{
+            order.status  = OrderStatus.RETURN;
+            order.payment_status = PaymentStatus.REFUND;
+        }
+        order.refunded_amount = Number(totalAmount || 0);
+        await order.save();
+
+        //stripe refund
+        const refundStripe = await partialRefundCharge(order.charge_id,orderitem.total_amount);   
+
+        const refundAmountInRupees = refundStripe.amount / 100;
+
+        if(refundStripe.status !== 'succeeded'){
+            //save Refund in DB
+            await createRefund(
+                refundStripe.id,
+                order.order_id,
+                refundAmountInRupees,
+                reason,
+                PaymentType,
+                RefundStatus.FAIL
+            );
+            throw new ApiError("Refund Failed, Please try again",400);
+        }
+        //save Refund in DB
+        const refund = await createRefund(
+            refundStripe.id,
+            order.order_id,
+            refundAmountInRupees,
+            reason,
+            PaymentType,
+            RefundStatus.SUCCESS
+        );
+            await createRefunditem(
+                refund.refund_id,
+                orderitem.orderitem_id,
+                orderitem.total_amount
+            );
+
+    }else{
+        // Return whole order: return every delivered order item (remaining not-yet-returned items)
+        const orderitems = await Orderitem.findAll({
+            where:{order_id:orderId,status:OrderItemStatus.DELIVER},
+        });
+
+        if(orderitems.length === 0){
+            throw new ApiError("No delivered order items to return",400);
+        }
+
+        // Mark items as returned + compute refund amount for this operation
+        let refundAmount = 0;
+        for(const orderitem of orderitems){
+            orderitem.status = OrderItemStatus.RETURN;
+            orderitem.refunded_amount = orderitem.total_amount;
+            await orderitem.save();
+
+            refundAmount += Number(orderitem.total_amount || 0);
+
+            // Restore product stock (same approach as cancel flow)
+            const product = await Product.findByPk(orderitem.product_id);
+            if(product){
+                product.quantity += orderitem.quantity;
+                product.is_available = product.quantity > 0;
+                await product.save();
+            }
+        }
+
+        // Decide FULL vs PARTIAL refund based on total amount already returned
+        const totalReturnedAmount = await Orderitem.sum('total_amount',{
+            where:{status:OrderItemStatus.RETURN,order_id:orderId}
+        });
+
+        const returnedPaise = Math.round(Number(totalReturnedAmount || 0) * 100);
+        const orderPaise = Math.round(Number(order.total_amount || 0) * 100);
+        const PaymentType = returnedPaise >= orderPaise
+            ? RefundType.FULL
+            : RefundType.PARTIAL;
+
+        if(PaymentType === RefundType.PARTIAL){
+            order.payment_status = PaymentStatus.PARTIALREFUND;
+        }else{
+            order.status = OrderStatus.RETURN;
+            order.payment_status = PaymentStatus.REFUND;
+        }
+        order.refunded_amount = Number(totalReturnedAmount || 0);
+        await order.save();
+
+        // stripe refund for remaining items
+        const refundStripe = await partialRefundCharge(order.charge_id,refundAmount);
+
+        const refundAmountInRupees = refundStripe.amount / 100;
+
+        if(refundStripe.status !== 'succeeded'){
+            await createRefund(
+                refundStripe.id,
+                order.order_id,
+                refundAmountInRupees,
+                reason,
+                PaymentType,
+                RefundStatus.FAIL
+            );
+            throw new ApiError("Refund Failed, Please try again",400);
+        }
+
+        const refund = await createRefund(
+            refundStripe.id,
+            order.order_id,
+            refundAmountInRupees,
+            reason,
+            PaymentType,
+            RefundStatus.SUCCESS
+        );
+
+        for(const orderitem of orderitems){
+            await createRefunditem(
+                refund.refund_id,
+                orderitem.orderitem_id,
+                orderitem.total_amount
+            );
+        }
+    }
+
+    return order;
+}   
+
+export default {createOrder, addCard, createPayment, getOrder, cancelOrder, deliverOrder, returnOrder};
