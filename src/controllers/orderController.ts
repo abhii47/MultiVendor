@@ -106,3 +106,16 @@ export const deliverOrder = async(
         next(err)
     }
 }
+export const returnOrder = async(
+    req:Request,
+    res:Response,
+    next:NextFunction
+) => {
+    try {
+        const userId = req.user.id;
+        const order = await orderService.returnOrder(userId,req.body);
+        successResponse(res,"Order Returned Successfully",200,order);
+    } catch (err:any) {
+        next(err)
+    }
+}
