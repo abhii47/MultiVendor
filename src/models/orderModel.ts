@@ -7,7 +7,7 @@ class Order extends Model<InferAttributes<Order>,InferCreationAttributes<Order>>
     declare total_amount:number;
     declare payment_status:'Pending'|'Paid'|'PartiallyRefunded'|'Refunded';
     declare refunded_amount:CreationOptional<number>;
-    declare status:'Pending'|'Confirmed'|'Cancelled'|'Delivered';
+    declare status:'Pending'|'Confirmed'|'Cancelled'|'Delivered'|'Returned';
     declare charge_id:CreationOptional<string>;
     declare coupon_id:CreationOptional<number>;
 }
@@ -35,7 +35,7 @@ Order.init({
         defaultValue:0.00
     },
     status:{
-        type:DataTypes.ENUM('Pending','Confirmed','Cancelled','Delivered'),
+        type:DataTypes.ENUM('Pending','Confirmed','Cancelled','Delivered','Returned'),
         defaultValue:'Pending'
     },
     charge_id:{

@@ -8,7 +8,7 @@ class Orderitem extends Model<InferAttributes<Orderitem>,InferCreationAttributes
     declare quantity:number;
     declare unit_price:number;
     declare total_amount:number;
-    declare status:'Pending'|'Confirmed'|'Cancelled'|'Delivered';
+    declare status:'Pending'|'Confirmed'|'Cancelled'|'Delivered'|'Returned';
     declare refunded_amount:CreationOptional<number>;
 
     declare amount?:number;  //inside vendordashboard
@@ -42,7 +42,7 @@ Orderitem.init({
         allowNull:true,
     },
     status:{
-        type:DataTypes.ENUM('Pending','Confirmed','Cancelled','Delivered'),
+        type:DataTypes.ENUM('Pending','Confirmed','Cancelled','Delivered','Returned'),
         defaultValue:'Pending',
     },
     refunded_amount:{
