@@ -1,7 +1,9 @@
 import { Request,Response,NextFunction } from "express";
 import multer from "multer";
-import path from "path";
-import fs from 'fs'
+import multerS3 from 'multer-s3';
+// import path from "path";
+// import fs from 'fs'
+import { s3,getEnv } from '../config/s3Client';
 import ApiError from "../utils/apiError";
 
 //Available Types of uploading images
@@ -22,16 +24,27 @@ export const upload = (data:uploadData) => {
         const {folder,type='single',maxFile=5,fieldName='image'} = data;
 
         //if folder doen't exist then create automatically
-        const uploadDir = path.join(__dirname,`../uploads/${folder}`);
-        fs.mkdirSync(uploadDir,{recursive:true});
+        // const uploadDir = path.join(__dirname,`../uploads/${folder}`);
+        // fs.mkdirSync(uploadDir,{recursive:true});
 
         //set the destination and filename inside localstorage
-        const storage = multer.diskStorage({
-            destination:(req,file,cb) => {
-                cb(null,uploadDir);
-            },
-            filename:(req,file,cb) =>{
-                cb(null,`${Date.now()}-${file.originalname}`);
+        // const storage = multer.diskStorage({
+        //     destination:(req,file,cb) => {
+        //         cb(null,uploadDir);
+        //     },
+        //     filename:(req,file,cb) =>{
+        //         cb(null,`${Date.now()}-${file.originalname}`);
+        //     }
+        // });
+        const storage = multerS3({
+            s3,
+            bucket:getEnv("AWS_BUCKET_NAME"),
+            contentType: multerS3.AUTO_CONTENT_TYPE,
+            key:(req,file,cb) => {
+                // Saves as: products/1234567890-shirt.jpg
+                // This "key" is what we store in DB instead of filename
+                const key = `${folder}/${Date.now()}-${file.originalname}`;
+                cb(null,key);
             }
         });
 
@@ -48,7 +61,9 @@ export const upload = (data:uploadData) => {
         });
 
         //check which type for uploading
-        const handler = type === 'array'?uploader.array(fieldName,maxFile):uploader.single(fieldName);
+        const handler = type === 'array'
+            ?uploader.array(fieldName,maxFile)
+            :uploader.single(fieldName);
 
         //call above function handle err 
         handler(req,res,(err)=>{
@@ -58,42 +73,4 @@ export const upload = (data:uploadData) => {
     }
 }
 
-
-// export const uploadProduct = async(req:Request,res:Response,next:NextFunction) => {
-
-//         //if folder doen't exist then create automatically
-//         const uploadDir = path.join(__dirname,'../uploads/products');
-//         fs.mkdirSync(uploadDir,{recursive:true});
-
-//         //set the destination and filename inside localstorage
-//         const storage = multer.diskStorage({
-//             destination:(req,file,cb) => {
-//                 cb(null,uploadDir);
-//             },
-//             filename:(req,file,cb) =>{
-//                 cb(null,`${Date.now()}-${file.originalname}`);
-//             }
-//         });
-        
-//         //Available Types of uploading images
-//         const allowMimetype = ["image/jpg","image/jpeg","application/pdf","image/png"]
-
-//         //upload the file 
-//         const uploadFile = multer({
-//             storage,
-//             limits:{fileSize: 5 * 1024 * 1024 }, //only 5MB file can be uploaded
-//             fileFilter:(req,file,cb)=>{
-//                 if(!allowMimetype.includes(file.mimetype)){
-//                     throw new ApiError("File type not allowed",422);
-//                 }
-//                 cb(null,true);
-//             }
-//         }).single('image');
-
-//         //call above function handle err 
-//         uploadFile(req,res,(err)=>{
-//         if(err) return next(err);
-//         next();
-//     });
-// }
 

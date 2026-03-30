@@ -10,8 +10,8 @@ export const createProduct = async(
 ) => {
     try {
         const userId = req.user.id;
-        const filename = req.file?.filename;
-        const product = await productService.createProduct(req.body,userId,filename);
+        const filekey = (req.file as Express.MulterS3.File)?.key;
+        const product = await productService.createProduct(req.body,userId,filekey);
         successResponse(res,product.msg,product.code,product.data);
     } catch (err) {
         next(err);
@@ -24,8 +24,8 @@ export const getProducts = async(
 ) => {
     try {
         const vendorId = req.user.id;
-        const baseUrl = `${req.protocol}://${req.get('host')}/uploads/products/`;
-        const products = await productService.getProducts(vendorId,baseUrl);
+        // const baseUrl = `${req.protocol}://${req.get('host')}/uploads/products/`;
+        const products = await productService.getProducts(vendorId);
         successResponse(res,"Products",200,products);
     } catch (err) {
         next(err);
