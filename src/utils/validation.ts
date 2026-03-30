@@ -135,7 +135,7 @@ export const updateProfileValidation = [
 
     body('state')
     .optional()
-    .isString().withMessage("State name must be string"),body()
+    .isString().withMessage("State name must be string"),
 ]
 
 //**************************************** Category Validation **************************************
