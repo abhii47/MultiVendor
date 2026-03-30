@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import fsPromise from 'fs/promises';
 import { Op, Sequelize } from "sequelize";
+import { deletefromS3, getImageUrl } from "../utils/s3Helper";
 
 type createProductBody = {
     productId:number;
@@ -12,17 +13,18 @@ type createProductBody = {
     price:number,
     quantity:number,
 }
-export const createProduct = async(body:createProductBody,userId:number,filename:string|undefined) => {
+export const createProduct = async(body:createProductBody,userId:number,filekey:string|undefined) => {
     const {productId,name,category,price,quantity} = body;
     
     //update logic
     if(productId > 0){
         //check exist or not
-        const updateProduct = await Product.findOne({where:{product_id:productId,user_id:userId}});
+        const updateProduct = await Product.findOne({
+            where:{product_id:productId,user_id:userId}});
         if(!updateProduct)throw new ApiError("Product not exist",400);
 
         //filepath of uploaded file before
-        const filepath = path.join(__dirname,`../uploads/products/${updateProduct.filename}`);
+        // const filekey = path.join(__dirname,`../uploads/products/${updateProduct.filename}`);
 
         //update the all values
         name ? updateProduct.name = name : updateProduct.name = updateProduct.name;
@@ -32,13 +34,12 @@ export const createProduct = async(body:createProductBody,userId:number,filename
         updateProduct.is_available = true;
 
         //delete and update the image from uploads folder
-        if(filename){
-            updateProduct.filename = filename
-            fs.unlink(filepath,(err)=>{
-                if(err)throw new ApiError(err.message,500);
-            })
+        if(filekey){
+            if(updateProduct.filename){
+                await deletefromS3(updateProduct.filename);
+            }
+            updateProduct.filename = filekey;
         }
-
         //save in DB
         await updateProduct.save();
 
@@ -49,7 +50,7 @@ export const createProduct = async(body:createProductBody,userId:number,filename
             user:updateProduct.user_id,
             price:updateProduct.price,
             quantity:updateProduct.quantity,
-            image:updateProduct.filename
+            imageUrl:updateProduct.filename
         }
 
         return {data,msg:"Product Updated Successfully",code:200};
@@ -61,7 +62,7 @@ export const createProduct = async(body:createProductBody,userId:number,filename
         if(vendor.status !== 'Verified') throw new ApiError("Not Verified Yet",400); 
 
         //if file not exist 
-        if(filename === undefined) throw new ApiError("image is required",400);
+        if(filekey === undefined) throw new ApiError("image is required",400);
         if(!name && !category && !price && !quantity){
             throw new ApiError("Fields missing",400);
         }
@@ -78,7 +79,7 @@ export const createProduct = async(body:createProductBody,userId:number,filename
             price,
             quantity,
             is_available:true,
-            filename
+            filename:filekey
         });
 
         const data = {
@@ -92,7 +93,7 @@ export const createProduct = async(body:createProductBody,userId:number,filename
         return {data,msg:"Product created successfully",code:201};
     }
 }
-export const getProducts = async(vendorId:number,baseUrl:string) => {
+export const getProducts = async(vendorId:number) => {
     //get all the data
     const products = await Product.findAll({
         where:{user_id:vendorId},
@@ -108,11 +109,23 @@ export const getProducts = async(vendorId:number,baseUrl:string) => {
     });
 
     //update the url so that can be clickable
-    products.map((p)=>{
-        p.filename = `${baseUrl}`+`${p.filename}`;
-    });
+    // products.map((p)=>{
+    //     p.filename = `${baseUrl}`+`${p.filename}`;
+    // });
+    const result = await Promise.all(
+        products.map(async(p)=>{
+            const signedUrl = p.filename
+                ? await getImageUrl(p.filename)
+                :null;
+            return {
+                ...p.toJSON(),
+                imageUrl:signedUrl,
+                filename:undefined,
+            }
+        })
+    );
 
-    return products;
+    return result;
 }
 export const deleteProduct = async(productId:number,userId:number) => {
     
@@ -123,13 +136,17 @@ export const deleteProduct = async(productId:number,userId:number) => {
     //check logged is owner of this project or not
     if(product.user_id !== userId) throw new ApiError("Permission denied",403);
 
-    const filepath = path.join(__dirname,`../uploads/products/${product.filename}`)
-    //delete the images before delete product
-    try {
-        await fsPromise.unlink(filepath);
-    } catch (err) {
-        throw new ApiError("Failed to delete file", 500);
+    // const filepath = path.join(__dirname,`../uploads/products/${product.filename}`)
+    // Delete image from S3 first, then delete DB record
+    if(product.filename){
+        await deletefromS3(product.filename);
     }
+
+    // try {
+    //     await fsPromise.unlink(filepath);
+    // } catch (err) {
+    //     throw new ApiError("Failed to delete file", 500);
+    // }
 
     //if exist then delete
     await product.destroy();

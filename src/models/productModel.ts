@@ -9,7 +9,7 @@ class Product extends Model<InferAttributes<Product>,InferCreationAttributes<Pro
     declare price:number;
     declare is_available:CreationOptional<boolean>;
     declare quantity:number;
-    declare filename:string;
+    declare filename:CreationOptional<string | null>;
 }
 
 Product.init({
@@ -44,7 +44,7 @@ Product.init({
     },
     filename:{
         type:DataTypes.STRING,
-        allowNull:false,
+        allowNull:true,
     }
 },{
     modelName:'Product',
