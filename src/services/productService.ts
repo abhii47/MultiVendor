@@ -2,6 +2,7 @@ import { Category, Orderitem, Product, Review, User, VendorProfile } from "../mo
 import ApiError from "../utils/apiError";
 import path from 'path';
 import fs from 'fs';
+import fsPromise from 'fs/promises';
 import { Op, Sequelize } from "sequelize";
 
 type createProductBody = {
@@ -39,7 +40,7 @@ export const createProduct = async(body:createProductBody,userId:number,filename
         }
 
         //save in DB
-        updateProduct.save();
+        await updateProduct.save();
 
         const data = {
             id:updateProduct.product_id,
@@ -123,9 +124,12 @@ export const deleteProduct = async(productId:number,userId:number) => {
     if(product.user_id !== userId) throw new ApiError("Permission denied",403);
 
     const filepath = path.join(__dirname,`../uploads/products/${product.filename}`)
-    fs.unlink(filepath,(err)=>{
-        if(err)throw new ApiError(err.message,500);
-    })
+    //delete the images before delete product
+    try {
+        await fsPromise.unlink(filepath);
+    } catch (err) {
+        throw new ApiError("Failed to delete file", 500);
+    }
 
     //if exist then delete
     await product.destroy();
@@ -169,8 +173,6 @@ export const getUserProducts = async(body:getUserProductBody) => {
     const {count,rows} = await Product.findAndCountAll({
         limit,
         offset,
-        logging:console.log,
-        // subQuery:false,
         //without this, a product with 2 reviews was counted as 2 products unique product_id counts
         distinct:true,
         where:whereCondition,
