@@ -1,17 +1,17 @@
-import { body } from "express-validator";
 import { Order, Orderitem, Review } from "../models";
 import ApiError from "../utils/apiError";
+import { deletefromS3 } from "../utils/s3Helper";
 
 type reviewBody = {
     product_id:number,
     rating:number,
     comment:string,
 }
-export const postReview = async(userId:number,body:reviewBody,baseUrl:string,files?:Express.Multer.File[]) => {
+export const postReview = async(userId:number,body:reviewBody,files?:Express.MulterS3.File[]) => {
     const {product_id,rating,comment} = body;
 
     const image_url = files && files.length > 0 
-                        ?JSON.stringify(files.map(image=>`${baseUrl}`+`${image.filename}`))
+                        ?files.map(file=>file.key)
                         :undefined;
 
     //check user purchased that product or not
@@ -46,8 +46,20 @@ export const deleteReview = async(userId:number,reviewId:number) => {
     });
     if(!review) throw new ApiError("Review Not found",404);
 
-    await review.destroy();
+    const images:string[] = review.image_url || [];
+    if(images.length > 0){
+        try {
+            await Promise.all(
+                images.map(async(img:string)=>{
+                    return await deletefromS3(img);
+                })
+            );
+        } catch (error) {
+            throw new ApiError("Failed to delete images from S3",500);
+        }
+    }
 
+    await review.destroy();
     return review;
 }
 
