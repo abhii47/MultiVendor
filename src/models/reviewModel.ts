@@ -8,7 +8,7 @@ class Review extends Model<InferAttributes<Review>,InferCreationAttributes<Revie
     declare rating:number;
     declare comment:string;
     declare is_verified_purchase:CreationOptional<boolean>;
-    declare image_url:CreationOptional<string>;
+    declare image_url:CreationOptional<string[]>;
 }
 
 Review.init({
@@ -42,7 +42,7 @@ Review.init({
         defaultValue:false,
     },
     image_url:{
-        type:DataTypes.STRING,
+        type:DataTypes.JSON,    
         allowNull:true,
     }
 },{

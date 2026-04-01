@@ -7,13 +7,15 @@ export const postReview = async(
     res:Response,
     next:NextFunction
 ) => {
-    const userId = req.user.id;
-    const files = req.files as Express.Multer.File[]
-    const baseUrl = `${req.protocol}://${req.get('host')}/uploads/reviews/`;
-    const review = await reviewService.postReview(userId,req.body,baseUrl,files);
-    successResponse(res,"Review Posted Successfully",201,review);
+    try {
+        const userId = req.user.id;
+        const files = (req.files as Express.MulterS3.File[])||[];
+        const review = await reviewService.postReview(userId,req.body,files);
+        successResponse(res,"Review Posted Successfully",201,review);
+    } catch (err:any) {
+        next(err);
+    }
 }
-
 export const deleteReview = async(
     req:Request,
     res:Response,
@@ -24,7 +26,7 @@ export const deleteReview = async(
         const reviewId:number = Number(req.params.id);
         const review = await reviewService.deleteReview(userId,reviewId);
         successResponse(res,"Review deleted successfully",200,review);
-    } catch (err) {
+    } catch (err:any) {
         next(err);
     }
 }

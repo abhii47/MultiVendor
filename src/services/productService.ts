@@ -1,8 +1,5 @@
 import { Category, Orderitem, Product, Review, User, VendorProfile } from "../models";
 import ApiError from "../utils/apiError";
-import path from 'path';
-import fs from 'fs';
-import fsPromise from 'fs/promises';
 import { Op, Sequelize } from "sequelize";
 import { deletefromS3, getImageUrl } from "../utils/s3Helper";
 
@@ -22,9 +19,6 @@ export const createProduct = async(body:createProductBody,userId:number,filekey:
         const updateProduct = await Product.findOne({
             where:{product_id:productId,user_id:userId}});
         if(!updateProduct)throw new ApiError("Product not exist",400);
-
-        //filepath of uploaded file before
-        // const filekey = path.join(__dirname,`../uploads/products/${updateProduct.filename}`);
 
         //update the all values
         name ? updateProduct.name = name : updateProduct.name = updateProduct.name;
@@ -108,10 +102,6 @@ export const getProducts = async(vendorId:number) => {
         ]
     });
 
-    //update the url so that can be clickable
-    // products.map((p)=>{
-    //     p.filename = `${baseUrl}`+`${p.filename}`;
-    // });
     const result = await Promise.all(
         products.map(async(p)=>{
             const signedUrl = p.filename
@@ -141,12 +131,6 @@ export const deleteProduct = async(productId:number,userId:number) => {
     if(product.filename){
         await deletefromS3(product.filename);
     }
-
-    // try {
-    //     await fsPromise.unlink(filepath);
-    // } catch (err) {
-    //     throw new ApiError("Failed to delete file", 500);
-    // }
 
     //if exist then delete
     await product.destroy();
@@ -183,8 +167,6 @@ export const getUserProducts = async(body:getUserProductBody) => {
 
     //for pagination
     let offset = Number((page-1)*limit);
-
-    //review image path 
 
 
     const {count,rows} = await Product.findAndCountAll({
@@ -230,7 +212,38 @@ export const getUserProducts = async(body:getUserProductBody) => {
         ],
         order:orderCondition
     });
-    return {count,rows,page,limit};
+
+    // normalize + convert to signed urls
+    const updatedRows = await Promise.all(
+        rows.map(async (p: any) => {
+        const productData = p.toJSON();
+
+        if (productData.Reviews) {
+            productData.Reviews = await Promise.all(
+            productData.Reviews.map(async (r: any) => {
+
+                // now always array or null for image_url
+                let images: string[] = r.image_url || [];
+
+                // convert keys to signed urls
+                images = await Promise.all(
+                images.map(async (img: string) => {
+                    return await getImageUrl(img);
+                })
+                );
+
+                return {
+                ...r,
+                image_url: images
+                };
+            })
+            );
+        }
+
+        return productData;
+        })
+    );
+    return {count,rows:updatedRows,page,limit};
 }
 
 export default {createProduct,getProducts,deleteProduct,getUserProducts};

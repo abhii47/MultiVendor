@@ -45,21 +45,6 @@ export const deleteProduct = async(
         next(err);
     }
 }
-
-// export const getUserProducts = async(
-//     req:Request,
-//     res:Response,
-//     next:NextFunction
-// ) => {
-//     try {
-//         const products = await productService.getUserProducts();
-//         const totalProduct=products.count;
-//         const data=products.rows;
-//         successResponse(res,"All Products",200,{totalProduct,data});
-//     } catch (err) {
-//         next(err);
-//     }
-// }
 export const getUserProducts = async(
     req:Request,
     res:Response,
