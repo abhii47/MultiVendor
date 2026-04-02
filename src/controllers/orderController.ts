@@ -114,7 +114,6 @@ export const returnOrder = async(
     try {
         const userId = req.user.id;
         const order = await orderService.returnOrder(userId,req.body);
-        console.log(order);
         successResponse(res,"Order Returned Successfully",200,order);
     } catch (err:any) {
         next(err)
