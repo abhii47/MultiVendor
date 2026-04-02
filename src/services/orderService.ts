@@ -521,80 +521,6 @@ export const cancelOrder = async(userId:number,orderId:number) => {
     return result;
 }
 
-export const autoCancelExpiredPendingOrders = async() => {
-    const cutoffTime = new Date(Date.now() - (1 * 60 * 1000));
-
-    const result = await sequelize.transaction(async(t) => {
-        const expiredOrders = await Order.findAll({
-            where:{
-                [Op.and]:[
-                    {status:OrderStatus.PENDING},
-                    {payment_status:PaymentStatus.PENDING},
-                    Sequelize.where(Sequelize.col('createdAt'), {[Op.lte]:cutoffTime}),
-                ],
-            },
-            transaction:t,
-            lock:t.LOCK.UPDATE,
-        });
-
-        for(const order of expiredOrders){
-            if(order.coupon_id){
-                const coupon = await Coupon.findByPk(order.coupon_id,{
-                    transaction:t,
-                    lock:t.LOCK.UPDATE,
-                });
-                if(coupon){
-                    coupon.max_user_limit += 1;
-                    await coupon.save({transaction:t});
-                }
-
-                await CouponUsage.destroy({
-                    where:{
-                        coupon_id:order.coupon_id,
-                        user_id:order.user_id,
-                    },
-                    transaction:t,
-                });
-            }
-
-            const orderitems = await Orderitem.findAll({
-                where:{order_id:order.order_id},
-                transaction:t,
-                lock:t.LOCK.UPDATE,
-            });
-
-            for(const item of orderitems){
-                const product = await Product.findOne({
-                    where:{product_id:item.product_id},
-                    transaction:t,
-                    lock:t.LOCK.UPDATE,
-                });
-
-                if(product){
-                    product.quantity += item.quantity;
-                    product.is_available = product.quantity > 0;
-                    await product.save({transaction:t});
-                }
-            }
-
-            await Orderitem.update(
-                {status:OrderItemStatus.CANCEL},
-                {
-                    where:{order_id:order.order_id},
-                    transaction:t,
-                }
-            );
-
-            order.status = OrderStatus.CANCEL;
-            await order.save({transaction:t});
-        }
-
-        return expiredOrders.length;
-    });
-
-    return result;
-}
-
 export const deliverOrder = async(orderId:number) => {
     const result = await sequelize.transaction(async(t) => {
         
@@ -849,13 +775,4 @@ export const returnOrder = async(userId:number,body:returnBody) => {
     }
 }   
 
-export default {
-    createOrder,
-    addCard,
-    createPayment,
-    getOrder,
-    cancelOrder,
-    autoCancelExpiredPendingOrders,
-    deliverOrder,
-    returnOrder
-};
+export default {createOrder, addCard, createPayment, getOrder, cancelOrder, deliverOrder, returnOrder};
