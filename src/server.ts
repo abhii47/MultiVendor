@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import path from 'path';
 import dotenv from 'dotenv';
 import errHandler from './middlewares/errorMiddleware';
+import { startCronJobs } from './jobs/cronJobs';
 dotenv.config();
 
 const app = express();
@@ -59,7 +60,10 @@ const serverStart = async() =>{
 
         //create server connection 
         const PORT = Number(process.env.PORT);
-        app.listen(PORT,()=>{console.log(`Server listening on ${PORT}`)});
+        app.listen(PORT,()=>{
+            console.log(`Server listening on ${PORT}`);
+            startCronJobs();
+        });
 
     } catch (err) {
         console.log("server can't connected",err);
