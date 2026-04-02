@@ -1,4 +1,4 @@
-import { Op, Sequelize } from "sequelize";
+import { Op, Sequelize, Transaction } from "sequelize";
 import { Cart, Cartitem, Coupon, Couponitem, CouponUsage, Order,Orderitem, Product, StripeCustomer } from "../models";
 import ApiError from "../utils/apiError";
 import sequelize from "../config/db";
@@ -89,12 +89,18 @@ export const createOrder = async(userId:number,couponCode?:string) => {
 
        //all the cartitems needs to belong to couponitems
        if(coupon){
-            for(const item of cartitems){
-                const couponitem = await Couponitem.findOne({
-                    where:{product_id:item.product_id,coupon_id:coupon.coupon_id},
-                    transaction:t
-                });
-                if(!couponitem) throw new ApiError("Coupon Can't used on this order",400);
+            const productIds = cartitems.map(i => i.product_id);
+
+            const couponItems = await Couponitem.findAll({
+            where: {
+                coupon_id: coupon.coupon_id,
+                product_id: productIds,
+            },
+            transaction: t,
+            });
+            
+            if (couponItems.length !== cartitems.length) {
+            throw new ApiError("Coupon Can't be used on this order", 400);
             }
        }
 
@@ -580,67 +586,91 @@ export const returnOrder = async(userId:number,body:returnBody) => {
             throw new ApiError("Orderitem Alredy Return",400);
         }
 
-        // Restore product stock (same approach as cancel flow)
-        const product = await Product.findByPk(orderitem.product_id);
-        if(product){
-            product.quantity += orderitem.quantity;
-            product.is_available = product.quantity > 0;
-            await product.save();
-        }
-
-        // update item status
-        orderitem.status = OrderItemStatus.RETURN;
-        orderitem.refunded_amount = orderitem.total_amount;
-        await orderitem.save();
-
-         //check total amount 
-         const totalAmount = await Orderitem.sum('total_amount',{
-            where:{status:OrderItemStatus.RETURN,order_id:orderId}
-        });
-
-        const returnedPaise = Math.round(Number(totalAmount || 0) * 100);
-        const orderPaise = Math.round(Number(order.total_amount || 0) * 100);
-        const PaymentType = returnedPaise >= orderPaise ? RefundType.FULL : RefundType.PARTIAL;
-        if(PaymentType === RefundType.PARTIAL){
-            order.payment_status = PaymentStatus.PARTIALREFUND;
-        }else{
-            order.status  = OrderStatus.RETURN;
-            order.payment_status = PaymentStatus.REFUND;
-        }
-        order.refunded_amount = Number(totalAmount || 0);
-        await order.save();
-
         //stripe refund
-        const refundStripe = await partialRefundCharge(order.charge_id,orderitem.total_amount);   
-
+        const refundStripe = await partialRefundCharge(
+            order.charge_id,
+            orderitem.total_amount
+        );   
         const refundAmountInRupees = refundStripe.amount / 100;
 
-        if(refundStripe.status !== 'succeeded'){
+        return await sequelize.transaction(async (t) => {
+            const lockedOrder = await Order.findByPk(orderId, {
+                transaction: t,
+                lock: t.LOCK.UPDATE,
+            });
+            if(!lockedOrder) throw new ApiError('Order Not Found',404);
+
+            const lockedItem = await Orderitem.findOne({
+                where: { product_id: productId, order_id: orderId },
+                transaction: t,
+                lock: t.LOCK.UPDATE,
+            });
+            if (!lockedItem) throw new ApiError("Orderitem not found", 404);
+
+            // Restore product stock (same approach as cancel flow)
+            const product = await Product.findByPk(lockedItem.product_id,{
+                transaction:t,
+                lock:t.LOCK.UPDATE,
+            });
+            if(product){
+            product.quantity += lockedItem.quantity;
+            product.is_available = product.quantity > 0;
+            await product.save({transaction:t});
+            
+            // update item
+            lockedItem.status = OrderItemStatus.RETURN;
+            lockedItem.refunded_amount = lockedItem.total_amount;
+            await lockedItem.save({ transaction: t });
+
+            //check total amount 
+            const totalAmount = await Orderitem.sum('total_amount',{
+                where:{status:OrderItemStatus.RETURN,order_id:orderId},
+                transaction:t
+            });
+
+            const returnedPaise = Math.round(Number(totalAmount || 0) * 100);
+            const orderPaise = Math.round(Number(lockedOrder.total_amount || 0) * 100);
+            const PaymentType = 
+                returnedPaise >= orderPaise 
+                ? RefundType.FULL 
+                : RefundType.PARTIAL;
+
+            if(PaymentType === RefundType.PARTIAL){
+                lockedOrder.payment_status = PaymentStatus.PARTIALREFUND;
+            }else{
+                lockedOrder.status  = OrderStatus.RETURN;
+                lockedOrder.payment_status = PaymentStatus.REFUND;
+            }
+            lockedOrder.refunded_amount = Number(totalAmount || 0);
+            await lockedOrder.save({transaction:t});
+            
             //save Refund in DB
-            await createRefund(
+            const refund = await createRefund(
                 refundStripe.id,
-                order.order_id,
+                orderId,
                 refundAmountInRupees,
                 reason,
                 PaymentType,
-                RefundStatus.FAIL
+                refundStripe.status === "succeeded"
+                    ?RefundStatus.SUCCESS
+                    :RefundStatus.FAIL,
+                {transaction:t}
             );
-            throw new ApiError("Refund Failed, Please try again",400);
-        }
-        //save Refund in DB
-        const refund = await createRefund(
-            refundStripe.id,
-            order.order_id,
-            refundAmountInRupees,
-            reason,
-            PaymentType,
-            RefundStatus.SUCCESS
-        );
+            //Check Succed payment or not
+            if (refundStripe.status !== "succeeded") {
+                throw new ApiError("Refund Failed, Please try again", 400);
+            };
+
+            //save refundItem in DB
             await createRefunditem(
                 refund.refund_id,
-                orderitem.orderitem_id,
-                orderitem.total_amount
+                lockedItem.orderitem_id,
+                lockedItem.total_amount,
+                {transaction:t},
             );
+            return lockedOrder
+        }
+        });
 
     }else{
         // Return whole order: return every delivered order item (remaining not-yet-returned items)
@@ -655,77 +685,94 @@ export const returnOrder = async(userId:number,body:returnBody) => {
         // Mark items as returned + compute refund amount for this operation
         let refundAmount = 0;
         for(const orderitem of orderitems){
-            orderitem.status = OrderItemStatus.RETURN;
-            orderitem.refunded_amount = orderitem.total_amount;
-            await orderitem.save();
-
             refundAmount += Number(orderitem.total_amount || 0);
-
-            // Restore product stock (same approach as cancel flow)
-            const product = await Product.findByPk(orderitem.product_id);
-            if(product){
-                product.quantity += orderitem.quantity;
-                product.is_available = product.quantity > 0;
-                await product.save();
-            }
         }
-
-        // Decide FULL vs PARTIAL refund based on total amount already returned
-        const totalReturnedAmount = await Orderitem.sum('total_amount',{
-            where:{status:OrderItemStatus.RETURN,order_id:orderId}
-        });
-
-        const returnedPaise = Math.round(Number(totalReturnedAmount || 0) * 100);
-        const orderPaise = Math.round(Number(order.total_amount || 0) * 100);
-        const PaymentType = returnedPaise >= orderPaise
-            ? RefundType.FULL
-            : RefundType.PARTIAL;
-
-        if(PaymentType === RefundType.PARTIAL){
-            order.payment_status = PaymentStatus.PARTIALREFUND;
-        }else{
-            order.status = OrderStatus.RETURN;
-            order.payment_status = PaymentStatus.REFUND;
-        }
-        order.refunded_amount = Number(totalReturnedAmount || 0);
-        await order.save();
 
         // stripe refund for remaining items
-        const refundStripe = await partialRefundCharge(order.charge_id,refundAmount);
-
+        const refundStripe = await partialRefundCharge(
+            order.charge_id,
+            refundAmount
+        );
         const refundAmountInRupees = refundStripe.amount / 100;
 
-        if(refundStripe.status !== 'succeeded'){
-            await createRefund(
+        return await sequelize.transaction(async (t) => {
+            const lockedOrder = await Order.findByPk(orderId, {
+                transaction: t,
+                lock: t.LOCK.UPDATE,
+            });
+            if(!lockedOrder) throw new ApiError('Order Not Found',404);
+
+            const lockedItems = await Orderitem.findAll({
+                where: { order_id: orderId, status: OrderItemStatus.DELIVER },
+                transaction: t,
+                lock: t.LOCK.UPDATE,
+            });
+            if(!lockedItems) throw new ApiError('Orderitem Not Found',404);
+
+            for(const item of lockedItems){
+                item.status = OrderItemStatus.RETURN;
+                item.refunded_amount = item.total_amount;
+                await item.save({transaction:t});
+
+                // Restore product stock (same approach as cancel flow)
+                const product = await Product.findByPk(item.product_id,{
+                    transaction:t,
+                    lock:t.LOCK.UPDATE,
+                });
+                if(product){
+                    product.quantity += item.quantity;
+                    product.is_available = product.quantity > 0;
+                    await product.save({transaction:t});
+                }
+            }
+
+            // Decide FULL vs PARTIAL refund based on total amount already returned
+            const totalReturnedAmount = await Orderitem.sum('total_amount',{
+                where:{status:OrderItemStatus.RETURN,order_id:orderId},
+                transaction:t,
+            });
+            const returnedPaise = Math.round(Number(totalReturnedAmount || 0) * 100);
+            const orderPaise = Math.round(Number(lockedOrder.total_amount || 0) * 100);
+            const PaymentType = returnedPaise >= orderPaise
+                ? RefundType.FULL
+                : RefundType.PARTIAL;
+
+            if(PaymentType === RefundType.PARTIAL){
+                lockedOrder.payment_status = PaymentStatus.PARTIALREFUND;
+            }else{
+                lockedOrder.status = OrderStatus.RETURN;
+                lockedOrder.payment_status = PaymentStatus.REFUND;
+            }
+            lockedOrder.refunded_amount = Number(totalReturnedAmount || 0);
+            await lockedOrder.save({transaction:t});
+
+            const refund = await createRefund(
                 refundStripe.id,
                 order.order_id,
                 refundAmountInRupees,
                 reason,
                 PaymentType,
-                RefundStatus.FAIL
+                refundStripe.status === "succeeded"
+                    ?RefundStatus.SUCCESS
+                    :RefundStatus.FAIL,
+                {transaction:t}
             );
-            throw new ApiError("Refund Failed, Please try again",400);
-        }
 
-        const refund = await createRefund(
-            refundStripe.id,
-            order.order_id,
-            refundAmountInRupees,
-            reason,
-            PaymentType,
-            RefundStatus.SUCCESS
-        );
+            if(refundStripe.status !== "succeeded"){
+                throw new ApiError("Refund Failed, Please try again", 400);
+            }
 
-        for(const orderitem of orderitems){
-            await createRefunditem(
+            for (const item of lockedItems) {
+                await createRefunditem(
                 refund.refund_id,
-                orderitem.orderitem_id,
-                orderitem.total_amount
-            );
-        }
+                item.orderitem_id,
+                item.total_amount,
+                { transaction: t }
+                );
+            }
+            return lockedOrder;
+        });
     }
-
-    return order;
 }   
 
 export default {createOrder, addCard, createPayment, getOrder, cancelOrder, deliverOrder, returnOrder};

@@ -1,3 +1,4 @@
+import { Transaction } from "sequelize";
 import { Refund, RefundItem } from "../models";
 
 enum RefundType {
@@ -16,7 +17,8 @@ export const createRefund = async(
     reasonType:string,
     refundType:RefundType,
     status:RefundStatus,
-    vendorId?:number
+    options?:{transaction?:Transaction},
+    vendorId?:number,
 ) => {
     const refund = await Refund.create({
         stripe_refund_id:refundId,
@@ -26,19 +28,20 @@ export const createRefund = async(
         reason_type:reasonType,
         refund_type:refundType,
         status,
-    });
+    },{transaction:options?.transaction});
     return refund;
 }
 
 export const createRefunditem = async(
     refundId:number,
     orderitemId:number,
-    amount:number
+    amount:number,
+    options?:{transaction?:Transaction}
 ) => {
     const refunditems = RefundItem.create({
         refund_id:refundId,
         orderitem_id:orderitemId,
         amount
-    });
+    },{transaction:options?.transaction});
     return refunditems
 }
