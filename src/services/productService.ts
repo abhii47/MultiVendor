@@ -1,4 +1,4 @@
-import { Category, Orderitem, Product, Review, User, VendorProfile } from "../models";
+import { Category, Product, Review, User, VendorProfile } from "../models";
 import ApiError from "../utils/apiError";
 import { Op, Sequelize } from "sequelize";
 import { deletefromS3, getImageUrl } from "../utils/s3Helper";
@@ -20,11 +20,10 @@ export const createProduct = async(body:createProductBody,userId:number,filekey:
             where:{product_id:productId,user_id:userId}});
         if(!updateProduct)throw new ApiError("Product not exist",400);
 
-        //update the all values
-        name ? updateProduct.name = name : updateProduct.name = updateProduct.name;
-        category ? updateProduct.category_id = category : updateProduct.category_id = updateProduct.category_id;
-        price ? updateProduct.price = price : updateProduct.price = updateProduct.price;
-        quantity ? updateProduct.quantity += quantity : updateProduct.quantity = updateProduct.quantity;
+        if (name) updateProduct.name = name;
+        if (category) updateProduct.category_id = category;
+        if (price != null) updateProduct.price = price;
+        if (quantity != null) updateProduct.quantity += quantity;
         updateProduct.is_available = true;
 
         //delete and update the image from uploads folder
@@ -95,7 +94,7 @@ export const getProducts = async(vendorId:number) => {
             'product_id','name',
             [Sequelize.col('Category.name'),'category'],
             'user_id','price','quantity','filename',
-            [Sequelize.literal(`price*quantity  `),'Total'] //count the total amount of each product; 
+            [Sequelize.literal("price * quantity"), "Total"],
         ],
         include:[
             {model:Category,attributes:[]},
@@ -136,7 +135,6 @@ export const deleteProduct = async(productId:number,userId:number) => {
     await product.destroy();
     
 }
-
 type getUserProductBody = {
     search?:string,
     category?:number,
