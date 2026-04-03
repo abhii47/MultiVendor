@@ -6,14 +6,15 @@ import path from 'path';
 import dotenv from 'dotenv';
 import errHandler from './middlewares/errorMiddleware';
 import { startCronJobs } from './jobs/cronJobs';
-dotenv.config();
+
+//Load environment variables
+const envFile =
+  process.env.NODE_ENV === 'production' 
+    ? '.env.production'    
+    : '.env.development';
+dotenv.config({path:envFile});
 
 const app = express();
-
-//package middlewares
-
-//static folders
-app.use('/uploads',express.static(path.join(__dirname,'uploads')));
 
 //Parsing middlewares
 app.use(cookieParser());
