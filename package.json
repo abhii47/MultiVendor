@@ -42,6 +42,8 @@
     "mysql2": "^3.18.2",
     "node-cron": "^4.2.1",
     "sequelize": "^6.37.7",
-    "stripe": "^20.4.1"
+    "stripe": "^20.4.1",
+    "winston": "^3.19.0",
+    "winston-cloudwatch": "^6.3.0"
   }
 }
