@@ -1,3 +1,6 @@
 import Stripe from 'stripe';
+import { getEnv, loadEnv } from './env';
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+loadEnv();
+
+export const stripe = new Stripe(getEnv("STRIPE_SECRET_KEY"));

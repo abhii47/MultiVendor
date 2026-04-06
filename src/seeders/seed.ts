@@ -1,8 +1,9 @@
 import { Category, User} from "../models";
 import sequelize from "../config/db";
-import dotenv from "dotenv";
 import bcrypt from 'bcrypt';
-dotenv.config();
+import { getEnv, loadEnv } from "../config/env";
+
+loadEnv();
 
 type Admin = {
   name: string;
@@ -17,12 +18,12 @@ const seedData = async () => {
     await sequelize.sync();
 
     //hashed password
-    const hashedPass = await bcrypt.hash(String(process.env.PASS),12);
+    const hashedPass = await bcrypt.hash(getEnv("PASS"),12);
 
     //define values for admin
     const Admin: Admin = {
-      name: String(process.env.NAME),
-      email: String(process.env.EMAIL),
+      name: getEnv("NAME"),
+      email: getEnv("EMAIL"),
       password: hashedPass,
       role:1,
     };

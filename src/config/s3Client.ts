@@ -1,15 +1,9 @@
 import { S3Client } from "@aws-sdk/client-s3";
-import dotenv from 'dotenv';
-dotenv.config();
+import { getEnv, loadEnv } from "./env";
 
-export const getEnv = (key:string):string => {
-    const value = process.env[key];
+loadEnv();
 
-    if(!value){
-        throw new Error(`Missing Environment variable ${key}`);
-    }
-    return value;
-}
+export { getEnv } from "./env";
 
 export const s3 = new S3Client({
     region:getEnv("AWS_REGION"),

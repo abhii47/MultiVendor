@@ -1,8 +1,11 @@
 import sgMail from '@sendgrid/mail';
 import ApiError from './apiError';
+import { getEnv, loadEnv } from '../config/env';
 
-const Email = process.env.SENDER_EMAIL;
-const Api = process.env.EMAIL_API;
+loadEnv();
+
+const Email = getEnv("SENDER_EMAIL");
+const Api = getEnv("EMAIL_API");
 if(!Api || !Email) throw new ApiError("Environment var missing",400);
 
 sgMail.setApiKey(Api);
