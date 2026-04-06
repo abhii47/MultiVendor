@@ -2,17 +2,11 @@ import express from 'express';
 import sequelize from './config/db';
 import './models';
 import cookieParser from 'cookie-parser';
-import path from 'path';
-import dotenv from 'dotenv';
 import errHandler from './middlewares/errorMiddleware';
 import { startCronJobs } from './jobs/cronJobs';
+import { loadEnv } from './config/env';
 
-//Load environment variables
-const envFile =
-  process.env.NODE_ENV === 'production' 
-    ? '.env.production'    
-    : '.env.development';
-dotenv.config({path:envFile});
+loadEnv();
 
 const app = express();
 
@@ -60,10 +54,12 @@ const serverStart = async() =>{
         console.log("Table Synced");
 
         //create server connection 
-        const PORT = Number(process.env.PORT);
+        const PORT = Number(process.env.PORT) || 3000;
         app.listen(PORT,()=>{
             console.log(`Server listening on ${PORT}`);
-            startCronJobs();
+            if(process.env.NODE_ENV === "production"){
+                startCronJobs();   
+            }
         });
 
     } catch (err) {

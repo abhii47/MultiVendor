@@ -10,35 +10,20 @@ services:
     ports:
       - "3000:3000"
     env_file:
-      - .env
+      - .env.development
     environment:
-      # IMPORTANT: inside Docker, use service name "mysql" (not localhost)
-      DB_HOST: mysql
+      # Use the host machine's database from inside the container.
+      PORT: 3000
+      DB_HOST: host.docker.internal
       DB_PORT: 3306
-      NODE_ENV: production
-    depends_on:
-      mysql:
-        condition: service_healthy
-    restart: unless-stopped
+      NODE_ENV: development
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
-  mysql:
-    image: mysql:8.0
-    container_name: multivendor-mysql
-    ports:
-      - "3307:3306" # host:container (optional; remove if not needed externally)
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: multivendor_db
-      MYSQL_USER: appuser
-      MYSQL_PASSWORD: apppassword
     volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -prootpassword"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
+      - .:/app              # 🔥 live code sync
+      - /app/node_modules   # prevent overwrite
 
-volumes:
-  mysql_data:
+    command: npm run dev    # 🔥 run dev server (ts-node-dev)
+
+    restart: unless-stopped
