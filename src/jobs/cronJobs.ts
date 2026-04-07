@@ -1,18 +1,23 @@
 import cron from 'node-cron';
 import { autoCancelExpiredPendingOrders } from '../services/orderService';
+import logger from '../utils/logger';
 
 const runAutoCancelJob = () => {
     const timestamp = new Date().toISOString();
 
     autoCancelExpiredPendingOrders()
         .then((cancelledOrderIds) => {
-            console.log(
-                `[cron] Auto-cancel checked at ${timestamp}. Cancelled pending orders: ${cancelledOrderIds.length}`,
-                cancelledOrderIds
-            );
+            logger.info("Auto-cancel checked", {
+                timestamp,
+                cancelledCount: cancelledOrderIds.length,
+                cancelledOrderIds,
+            });
         })
         .catch((error) => {
-            console.error(`[cron] Auto-cancel failed at ${timestamp}`, error);
+            logger.error("Auto-cancel failed", {
+                timestamp,
+                error,
+            });
         });
 };
 

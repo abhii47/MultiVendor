@@ -1,19 +1,7 @@
 import { Request,Response,NextFunction } from "express";
 import userService from "../services/userService";
 import { successResponse } from "../utils/response";
-
-// export const getUsers = async(
-//     req:Request,
-//     res:Response,
-//     next:NextFunction
-// )=>{
-//     try {
-//         const users = await userService.getUsers();
-//         successResponse(res,"All Users",200,users);
-//     } catch (err) {
-//         next(err);
-//     }
-// }
+import logger from "../utils/logger";
 
 export const deleteUser = async(
     req:Request,
@@ -23,6 +11,10 @@ export const deleteUser = async(
     try {
         const userId = Number(req.params.id);
         await userService.deleteUser(userId);
+        logger.warn("User deleted", {
+            deletedUserId: userId,
+            actorAdminId: req.user?.id,
+        });
         successResponse(res,"User deleted successfully",200);
     } catch (err) {
         next(err);

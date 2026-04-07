@@ -1,6 +1,7 @@
 import { Request,Response,NextFunction } from "express";
 import productService from "../services/productService";
 import { successResponse } from "../utils/response";
+import logger from "../utils/logger";
 
 
 export const createProduct = async(
@@ -12,6 +13,12 @@ export const createProduct = async(
         const userId = req.user.id;
         const filekey = (req.file as Express.MulterS3.File)?.key;
         const product = await productService.createProduct(req.body,userId,filekey);
+        logger.info("Product upsert completed", {
+            vendorUserId: userId,
+            productId: product.data.id,
+            productName: product.data.name,
+            action: product.code === 201 ? "created" : "updated",
+        });
         successResponse(res,product.msg,product.code,product.data);
     } catch (err) {
         next(err);
@@ -40,6 +47,10 @@ export const deleteProduct = async(
         const productId = Number(req.params.id);
         const userId = req.user.id;
         await productService.deleteProduct(productId,userId);
+        logger.warn("Product deleted", {
+            vendorUserId: userId,
+            productId,
+        });
         successResponse(res,"Product deleted successfully",200);
     } catch (err) {
         next(err);

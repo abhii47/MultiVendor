@@ -1,6 +1,7 @@
 import { Request,Response,NextFunction } from "express";
 import cartService from "../services/cartService";
 import { successResponse } from "../utils/response";
+import logger from "../utils/logger";
 
 
 export const addCart = async(
@@ -17,6 +18,13 @@ export const addCart = async(
             cart_id:cartData.cart_id,
             quantity:cartData.quantity
         }
+        logger.info("Cart item added", {
+            userId,
+            cartId: cartData.cart_id,
+            cartItemId: cartData.cartitem_id,
+            productId: cartData.product_id,
+            quantity: cartData.quantity,
+        });
         successResponse(res,"Product added in Cart",201,data);
     } catch (err) {
         next(err);
@@ -49,5 +57,9 @@ export const removeCart = async(
     const userId = req.user.id;
     const cartitemId = Number(req.params.id);
     await cartService.removeCart(userId,cartitemId);
+    logger.info("Cart item removed", {
+        userId,
+        cartItemId: cartitemId,
+    });
     successResponse(res,"Product removed from Cart",200);
 }
