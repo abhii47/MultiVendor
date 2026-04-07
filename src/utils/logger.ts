@@ -1,47 +1,80 @@
-import winston from 'winston';
-import WinstonCloudwatch from 'winston-cloudwatch';
-import { getEnv } from '../config/env';
+import winston from "winston";
+import DailyRotateFile from "winston-daily-rotate-file";
+import WinstonCloudWatch from "winston-cloudwatch";
+import { getEnv } from "../config/env";
 
-const isProduction = process.env.NODE_ENV === 'production';
+const isProduction = process.env.NODE_ENV === "production";
 
-const loggerTransports:any[] = [];
+const {
+  combine,
+  timestamp,
+  printf,
+  colorize,
+  errors,
+  json,
+} = winston.format;
 
-//*********************** For Dev *****************
-if(!isProduction){
-    loggerTransports.push(
-        new winston.transports.Console({
-            format:winston.format.simple(),
-        }),
-        new winston.transports.File({
-            filename:'logs/dev.log',
-        })
-    );
+// 👉 Pretty format for development
+const devFormat = printf(({ level, message, timestamp, stack, ...meta }) => {
+   return `
+${timestamp} 🔹 ${level}
+➡️  ${stack || message}
+${Object.keys(meta).length ? "📦 " + JSON.stringify(meta, null, 2) : ""}
+----------------------------------------`;
+});
+
+const transports: winston.transport[] = [];
+
+// ================= DEV =================
+if (!isProduction) {
+  transports.push(
+    new winston.transports.Console({
+      level: process.env.LOG_LEVEL || "debug",
+      format: combine(colorize({all:true}), timestamp(), errors({ stack: true }), devFormat),
+    }),
+
+    // Optional file (rotated)
+    new DailyRotateFile({
+      filename: "logs/dev-%DATE%.log",
+      datePattern: "YYYY-MM-DD",
+      maxFiles: "7d",
+      zippedArchive: false, 
+    })
+  );
 }
 
-//*********************** For Production *****************
-if(isProduction){
-    loggerTransports.push(
-        new winston.transports.File({
-            filename:'logs/prod.log',
-        }),
-        new WinstonCloudwatch({
-            logGroupName:'MultiVendorAppLogs',
-            logStreamName:'prod-logs',
-            awsRegion:getEnv('AWS_REGION'),
-            jsonMessage:true,
-        }),
-    );
+// ================= PROD =================
+if (isProduction) {
+  transports.push(
+    // Store in CloudWatch
+    new WinstonCloudWatch({
+      logGroupName: "multivendor-app",
+      logStreamName: "backend-logs",
+      awsRegion: getEnv("AWS_REGION"),
+      awsAccessKeyId:getEnv("AWS_ACCESS_KEY_ID"),
+      awsSecretKey:getEnv("AWS_SECRET_ACCESS_KEY"),
+      jsonMessage: true,
+    }),
+    new winston.transports.Console({
+      level: process.env.LOG_LEVEL || "info",
+      format: combine(
+        timestamp(),
+        errors({ stack: true }),
+        json()
+      ),
+    })
+  );
 }
 
-
-//*********************** Create Logger *****************
+// ================= LOGGER =================
 const logger = winston.createLogger({
-    level: isProduction ? 'info' : 'debug',
-    format:winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.json(),
-    ),
-    transports:loggerTransports,
+  level: process.env.LOG_LEVEL || (isProduction ? "info" : "debug"),
+  format: combine(
+    timestamp(),
+    errors({ stack: true }),
+    json() // structured logs (prod-friendly)
+  ),
+  transports,
 });
 
 export default logger;

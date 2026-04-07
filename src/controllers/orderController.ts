@@ -3,6 +3,7 @@ import orderService from "../services/orderService";
 import { successResponse } from "../utils/response";
 import { UniqueConstraintError } from "sequelize";
 import ApiError from "../utils/apiError";
+import logger from "../utils/logger";
 
 export const createOrder = async(
     req:Request,
@@ -19,6 +20,13 @@ export const createOrder = async(
             total_amount:order.total_amount,
             status:order.status
         }
+        logger.info("Order created", {
+            userId,
+            orderId: order.order_id,
+            totalAmount: order.total_amount,
+            couponCode: coupon || null,
+            status: order.status,
+        });
         successResponse(res,"Order Pending, Complete the Payment Process....",201,data);
     } catch (err:any) {
         //for race condtion
@@ -44,6 +52,12 @@ export const addCard = async(
             exp_year:card.exp_year,
             is_default:card.is_default,
         }
+        logger.info("Card added", {
+            userId,
+            brand: card.brand,
+            last4: card.last4,
+            isDefault: card.is_default,
+        });
         successResponse(res,"Card added successfully",201,data);
     } catch (err) {
         next(err)
@@ -57,6 +71,12 @@ export const createPayment = async(
     try {
         const userId = req.user.id;
         const order = await orderService.createPayment(userId,req.body);
+        logger.info("Order payment completed", {
+            userId,
+            orderId: order.order_id,
+            chargeId: order.charge_id,
+            totalAmount: order.total_amount,
+        });
         successResponse(res,'Your Order Placed Successfully',200,order);
     } catch (err) {
         next(err)
@@ -88,6 +108,11 @@ export const cancelOrder = async(
             order_id:order.order_id,
             amount:order.total_amount
         }
+        logger.warn("Order cancelled", {
+            userId,
+            orderId: order.order_id,
+            refundedAmount: order.total_amount,
+        });
         successResponse(res,"Cancelled order successfully",200,data);
     } catch (err:any) {
         next(err)
@@ -101,6 +126,10 @@ export const deliverOrder = async(
     try {
         const orderId = Number(req.params.id);
         const order = await orderService.deliverOrder(orderId);
+        logger.info("Order delivered", {
+            orderId: order.order_id,
+            chargeId: order.charge_id,
+        });
         successResponse(res,"Order Delivered Successfully",200,order);
     } catch (err:any) {
         next(err)
@@ -114,6 +143,12 @@ export const returnOrder = async(
     try {
         const userId = req.user.id;
         const order = await orderService.returnOrder(userId,req.body);
+        logger.warn("Order return processed", {
+            userId,
+            orderId: order?.order_id,
+            refundedAmount: order?.refunded_amount,
+            paymentStatus: order?.payment_status,
+        });
         successResponse(res,"Order Returned Successfully",200,order);
     } catch (err:any) {
         next(err)
