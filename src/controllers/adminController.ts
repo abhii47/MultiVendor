@@ -66,16 +66,3 @@ export const getTopRatedProducts = async(
         next(err);
     }
 }
-
-// export const oldUserInStripe = async(
-//     req:Request,
-//     res:Response,
-//     next:NextFunction
-// ) => {
-//     try {
-//         const added = await adminService.oldUserInStripe();
-//         successResponse(res,"create as Stripe Customer",201);
-//     } catch (err) {
-//         next(err);
-//     }
-// }

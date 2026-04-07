@@ -3,6 +3,7 @@ import sequelize from './config/db';
 import './models';
 import cookieParser from 'cookie-parser';
 import errHandler from './middlewares/errorMiddleware';
+import { requestLogger } from './middlewares/logMiddleware';
 import { startCronJobs } from './jobs/cronJobs';
 import { loadEnv } from './config/env';
 
@@ -14,6 +15,7 @@ const app = express();
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({extended:true}));
+app.use(requestLogger);
 
 //Import Routes
 import authRoutes from './routes/authRoute';

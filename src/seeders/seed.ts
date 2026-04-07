@@ -2,6 +2,7 @@ import { Category, User} from "../models";
 import sequelize from "../config/db";
 import bcrypt from 'bcrypt';
 import { getEnv, loadEnv } from "../config/env";
+import logger from "../utils/logger";
 
 loadEnv();
 
@@ -51,9 +52,12 @@ const seedData = async () => {
       {category_id:8,name:'Baby Product'},
     ]);
 
-    console.log(`${addedAdmin.name} as ${addedAdmin.role} & categories added`);
+    logger.info("Seed completed", {
+      adminName: addedAdmin.name,
+      role: addedAdmin.role,
+    });
   } catch (err) {
-    console.log(err);
+    logger.error("Seed failed", { err });
   }
 };
 
