@@ -23,7 +23,8 @@ export const sendOtpEmail = async(to:string,otp:number) =>{
                   </div>
                   <p style="font-size:16px">your otp is <b>${otp}</b>.It is valid for 5 minutes</p>`
         });
-    } catch (err) {
-        throw new ApiError("Something Went Wrong",400);
+        console.log("✅ Email sent:", to);
+    } catch (err:any) {
+        console.error("❌ SendGrid Error:", err.response?.body || err.message);
     }
 }
