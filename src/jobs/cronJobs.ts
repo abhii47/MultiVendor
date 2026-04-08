@@ -22,5 +22,5 @@ const runAutoCancelJob = () => {
 };
 
 export const startCronJobs = () => {
-    cron.schedule('* * * * *', runAutoCancelJob);
+    cron.schedule('*/30 * * * *', runAutoCancelJob);
 };
