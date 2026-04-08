@@ -9,6 +9,7 @@ import jwt,{ JwtPayload } from "jsonwebtoken";
 import { userLoginLog } from "../utils/loginLog";
 import { sendOtpEmail } from "../utils/sendEmail";
 import { createCustomer } from "./stripeService";
+import logger from "../utils/logger";
 
 type RegBody = {
     name:string,
@@ -47,22 +48,27 @@ export const register = async(body:RegBody) =>{
     // Create Customer On Stripe 
     let stripe_customer_id: string | null = null;
     if(user.role === getValue('user')){
-        
-        const customer = await createCustomer(user.name,user.email);
+        setImmediate(async () => {
+            try {
+                const customer = await createCustomer(user.name,user.email);
 
-        //save that customer's stripe id in DB
-        const stripe_customer = await StripeCustomer.create({
-            stripe_customer_id:customer.id,
-            user_id:user.user_id,
+                //save that customer's stripe id in DB
+                await StripeCustomer.create({
+                    stripe_customer_id:customer.id,
+                    user_id:user.user_id,
+                });
+                // stripe_customer_id = stripe_customer.stripe_customer_id;
+                logger.info(`Stripe customer created for user ${user.email}: ${customer.id}`);
+            } catch (err) {
+                logger.error("Stripe background job failed:", err);
+            }
         });
-        stripe_customer_id = stripe_customer.stripe_customer_id;
     }
 
     const data = {
         name:user.name,
         email:user.email,
         role:user.role,
-        stripe_customer_id:stripe_customer_id
     }
 
     return data
@@ -74,24 +80,26 @@ export const forgetPass = async(email:string,otp:number) =>{
     const existuser = await User.findOne({where:{email}});
     if(!existuser) throw new ApiError("Email Not Register Yet!",400);
 
-    //send email with otp
-    await sendOtpEmail(email,otp);
-
-    //Store otp with expiry date in DB
-    const existOtp = await Otp.findOne({where:{email}});
-    if(existOtp){
-        await Otp.update({
-            otp,
-            expires_in:new Date(Date.now() + 5 * 60 * 1000)
-        },
-        {where:{email}});
-    }else{
-        await Otp.create({
-            email,
-            otp,
-            expires_in:new Date(Date.now() + 5 * 60 * 1000)
-        });
+    //Check Rate Limit
+    const existingOtp = await Otp.findOne({ where: { email } });
+    if (existingOtp && existingOtp.expires_in > new Date()) {
+        throw new ApiError("OTP already sent. Try again later.", 400);
     }
+
+    //Generate Expiry
+    const expiry = new Date(Date.now() + 5 * 60 * 1000); 
+
+    await Otp.upsert({
+        email,
+        otp,
+        expires_in:expiry
+    });
+
+    setImmediate(() => {
+        sendOtpEmail(email, otp).catch(err => {
+            console.error("Email failed:", err.message)
+        });
+    });
 } 
 
 type setPassBody = {
