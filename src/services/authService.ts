@@ -4,7 +4,7 @@ import { generateAccessToken,generateRefreshToken} from "../utils/generator";
 import bcrypt from 'bcrypt';
 import ApiError from "../utils/apiError";
 import sequelize from "../config/db";
-import {roles} from "../utils/roleAssign";
+import {getValue, roles} from "../utils/roleAssign";
 import jwt,{ JwtPayload } from "jsonwebtoken";
 import { userLoginLog } from "../utils/loginLog";
 import { sendOtpEmail } from "../utils/sendEmail";
@@ -17,26 +17,23 @@ type RegBody = {
     role:number,
 }
 export const register = async(body:RegBody) =>{
-    const result = await sequelize.transaction(async(t)=>{
-        const {name,email,password,role} = body;
+    const {name,email,password,role} = body;
+    
+    //Verify Roles
+    if (!Object.values(roles).includes(role) || role === roles.admin) {
+        throw new ApiError("Invalid role provided", 400);
+    }
 
-        //check existing user 
+    //hashed password
+    const hashedPass:string = await bcrypt.hash(password,10);
+
+    //transaction for creating user
+    const user = await sequelize.transaction(async(t)=>{
+
+        //Verify User
         const existUser = await User.findOne({where:{email},transaction:t})
-        if(existUser) throw new ApiError("User already exists.",400);
+        if(existUser) throw new ApiError("User already exists.",400);    
 
-        //hashed password
-        const hashedPass:string = await bcrypt.hash(password,12);    
-
-        //check role correct or not
-        if(role === roles.admin){
-            throw new ApiError("Something went wrong pass correct information",400);
-        }
-        const value = Object.values(roles);
-        if(!value.includes(role)){
-            throw new ApiError("Something went wrong pass correct information",400);
-        }
-
-        //create user
         const user = await User.create({
             name,
             email,
@@ -44,33 +41,31 @@ export const register = async(body:RegBody) =>{
             role:role,
         },{transaction:t});
 
-        if(user.role === 3){
-            //create customer in stripe dashboard
-            const customer = await createCustomer(name,email);
+        return user;
+    });
 
-            //save that customer's stripe id in DB
-            const stripe_customer = await StripeCustomer.create({
-                stripe_customer_id:customer.id,
-                user_id:user.user_id,
-            },{transaction:t});
+    // Create Customer On Stripe 
+    let stripe_customer_id: string | null = null;
+    if(user.role === getValue('user')){
+        
+        const customer = await createCustomer(user.name,user.email);
 
-            return {
-                name:user.name,
-                email:user.email,
-                role:user.role,
-                stripe_customer_id:stripe_customer.stripe_customer_id
-            }
-        }
+        //save that customer's stripe id in DB
+        const stripe_customer = await StripeCustomer.create({
+            stripe_customer_id:customer.id,
+            user_id:user.user_id,
+        });
+        stripe_customer_id = stripe_customer.stripe_customer_id;
+    }
 
-        const data = {
-            name:user.name,
-            email:user.email,
-            role:user.role,
-        }
+    const data = {
+        name:user.name,
+        email:user.email,
+        role:user.role,
+        stripe_customer_id:stripe_customer_id
+    }
 
-        return data
-    }) 
-    return result;
+    return data
 }
 
 export const forgetPass = async(email:string,otp:number) =>{
@@ -125,7 +120,7 @@ export const setPass = async(body:setPassBody) =>{
     if(confirmpass !== newpass) throw new ApiError("both password not matched",400);
 
     //hashing the password
-    const hashedPass = await bcrypt.hash(newpass,12);
+    const hashedPass = await bcrypt.hash(newpass,10);
 
     //change the password of user
     await User.update({password:hashedPass},{where:{email}});
@@ -139,56 +134,40 @@ type LogBody = {
     password:string
 }
 export const login = async(res:Response,ip:string,body:LogBody) =>{
-    const result = await sequelize.transaction(async(t)=>{
         const {email,password} = body;
 
-        //check email exist or not
-        const user = await User.findOne({where:{email},transaction:t});
-        if(!user) throw new ApiError("Credential not correct",401);
+        //fetch user
+        const user = await User.findOne({where:{email},});
+        if(!user) throw new ApiError("User Not Found",404);
 
-        //password matching
+        //verify password
         const matchPass = await bcrypt.compare(password,user.password);
         if(!matchPass){
             //create logs
-            userLoginLog(user.user_id,'Failed',ip);
+            await userLoginLog(user.user_id,'Failed',ip);
             throw new ApiError("Credential not correct",401);
         } 
 
         //pass data for generating token
-        const userData ={
-            id:user.user_id,
-            role:user.role,
-            email:user.email
-        }
+        const userData ={ id: user.user_id, role: user.role, email: user.email }
 
         //generate the both tokens
         const newAccessToken = generateAccessToken(userData);
         const newRefreshToken = generateRefreshToken(userData);
 
-        //create logs
-        userLoginLog(user.user_id,'Success',ip);
+        const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-        //check refreshToken exist or not in DB
-        const existToken = await RefreshToken.findOne({where:{user_id:user.user_id},transaction:t})
-        if(existToken){
-            await RefreshToken.update({
-                token:newRefreshToken,
-                expires_in:new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-            },{
-                where:{user_id:user.user_id},
-                transaction:t
-            })
-        }else{
-            //store the refresh token data on db
-            await RefreshToken.create({
-                token:newRefreshToken,
-                expires_in:new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-                user_id:user.user_id
+        //findone + update or create refresh token in DB and create logs
+        await Promise.all([
+            RefreshToken.upsert({
+                user_id: user.user_id,
+                token: newRefreshToken,
+                expires_in: tokenExpiry
+            }),
+            userLoginLog(user.user_id,'Success',ip),
+        ]);
 
-            },{transaction:t});
-        }
-
-        //assign refresh token on httpOnly cookie
+        //Set Cookie
         res.cookie('refreshToken',newRefreshToken,{
             httpOnly:true,
             secure:true,
@@ -204,8 +183,6 @@ export const login = async(res:Response,ip:string,body:LogBody) =>{
         }
 
         return data;
-    });
-    return result;
 }
 
 export const refresh = async(res:Response,refresh:string) =>{
@@ -271,7 +248,7 @@ export const changePass = async(existPass:string,pass:string,userId:number) =>{
     if(!matchPass) throw new ApiError("Pass Correct Information",400);
 
     //hashing password
-    const hashedPass = await bcrypt.hash(pass,12);
+    const hashedPass = await bcrypt.hash(pass,10);
     //change the password
     await User.update({
         password:hashedPass
@@ -289,7 +266,7 @@ export const logout = async(res:Response,userId:number,ip:string)=>{
     }
     await checkToken.destroy();
     //create logs
-    userLoginLog(userId,'Success',ip,true);
+    await userLoginLog(userId,'Success',ip,true);
 
     //clear token from httpOnly cookie
     res.clearCookie('refreshToken');

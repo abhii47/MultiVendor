@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
+import ApiError from "../utils/apiError";
 
 let isEnvLoaded = false;
 
@@ -37,7 +38,7 @@ export const getEnv = (key: string): string => {
     const value = process.env[key];
 
     if (!value) {
-        throw new Error(`Missing environment variable ${key}`);
+        throw new ApiError(`Missing environment variable ${key}`,400);
     }
 
     return value;
