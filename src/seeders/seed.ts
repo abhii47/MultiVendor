@@ -16,7 +16,6 @@ type Admin = {
 const seedData = async () => {
   try {
     await sequelize.authenticate();
-    await sequelize.sync();
 
     //hashed password
     const hashedPass = await bcrypt.hash(getEnv("PASS"),12);
@@ -50,7 +49,7 @@ const seedData = async () => {
       {category_id:6,name:'Beauty'},
       {category_id:7,name:'Grocery'},
       {category_id:8,name:'Baby Product'},
-    ]);
+    ],{ ignoreDuplicates:true });
 
     logger.info("Seed completed", {
       adminName: addedAdmin.name,

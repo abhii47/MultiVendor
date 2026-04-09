@@ -4,11 +4,14 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc",
-    "start": "cross-env NODE_ENV=production node dist/server.js",
-    "dev": "cross-env NODE_ENV=development ts-node-dev --respawn --transpile-only src/server.ts",
-    "seed": "ts-node src/seeders/seed.ts",
-    "prod": "npm run build && npm start"
+    "build": "rm -rf dist && tsc",
+    "start": "npm run build && cross-env NODE_ENV=production node dist/server.js",
+    "dev": "npm run build && cross-env NODE_ENV=development node dist/server.js",
+    "db:migrate": "npm run build && sequelize-cli db:migrate --config dist/config/sequelizeCliConfig.js --migrations-path dist/migrations",
+    "db:migrate:undo": "npm run build && sequelize-cli db:migrate:undo --config dist/config/sequelizeCliConfig.js --migrations-path dist/migrations",
+    "db:migrate:status": "npm run build && sequelize-cli db:migrate:status --config dist/config/sequelizeCliConfig.js --migrations-path dist/migrations",
+    "seed": "npm run build && node dist/seeders/seed.js",
+    "prod": "npm run start"
   },
   "keywords": [],
   "author": "",
@@ -23,7 +26,6 @@
     "@types/multer-s3": "^3.0.3",
     "@types/node": "^25.3.3",
     "sequelize-cli": "^6.6.5",
-    "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3"
   },
   "dependencies": {
