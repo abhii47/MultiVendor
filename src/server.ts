@@ -51,10 +51,6 @@ const serverStart = async() =>{
         await sequelize.authenticate();
         console.log("Database connected");
 
-        // Sync all the table
-        await sequelize.sync();
-        console.log("Table Synced");
-
         //create server connection 
         const PORT = Number(process.env.PORT) || 3000;
         app.listen(PORT,()=>{
