@@ -30,7 +30,6 @@ Otp.init({
     modelName:'Otp',
     tableName:'otps',
     sequelize,
-    paranoid:true,
     indexes:[
         {fields:['email'],unique:true}
     ]
