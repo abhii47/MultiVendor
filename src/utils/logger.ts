@@ -1,9 +1,11 @@
 import winston from "winston";
 import DailyRotateFile from "winston-daily-rotate-file";
 import WinstonCloudWatch from "winston-cloudwatch";
+import fs from "fs";
 import { getEnv } from "../config/env";
 
 const isProduction = process.env.NODE_ENV === "production";
+fs.mkdirSync("logs", { recursive: true });
 
 const {
   combine,
@@ -56,6 +58,18 @@ if (isProduction) {
       jsonMessage: true,
     }),
     new winston.transports.Console({
+      level: process.env.LOG_LEVEL || "info",
+      format: combine(
+        timestamp(),
+        errors({ stack: true }),
+        json()
+      ),
+    }),
+    new DailyRotateFile({
+      filename: "logs/prod-%DATE%.log",
+      datePattern: "YYYY-MM-DD",
+      maxFiles: "14d",
+      zippedArchive: true,
       level: process.env.LOG_LEVEL || "info",
       format: combine(
         timestamp(),
