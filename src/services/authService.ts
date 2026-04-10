@@ -10,6 +10,7 @@ import { userLoginLog } from "../utils/loginLog";
 import { sendOtpEmail } from "../utils/sendEmail";
 import { createCustomer } from "./stripeService";
 import logger from "../utils/logger";
+import { getEnv } from "../config/env";
 
 type RegBody = {
     name:string,
@@ -111,30 +112,36 @@ type setPassBody = {
 export const setPass = async(body:setPassBody) =>{
     const {email,otp,newpass,confirmpass} = body;
 
-    //check mail record
+    //Validate passwords
+    if(confirmpass !== newpass) throw new ApiError("Passwords do not match",400);
+
+    //Fetch OTP data
     const otpData = await Otp.findOne({where:{email}});
-    if(!otpData) throw new ApiError("Wrong Email",400);
+    if(!otpData) throw new ApiError("Invalid email or OTP",400);
 
-    //match the otp
-    if(otpData.otp !== otp) throw new ApiError("Your otp is incorrect",400);
+    //Validate OTP
+    if(otpData.otp !== otp) throw new ApiError("Invalid OTP",400);
 
-    //check expiry
-    if(otpData.expires_in<new Date(Date.now())){
+    //Check expiry
+    if(otpData.expires_in < new Date()){
         await otpData.destroy();
-        throw new ApiError("Your Otp Expired",400);
+        throw new ApiError("OTP expired",400);
     } 
 
-    //check both password(cpass & pass)
-    if(confirmpass !== newpass) throw new ApiError("both password not matched",400);
-
-    //hashing the password
+    //Hash Password
     const hashedPass = await bcrypt.hash(newpass,10);
 
-    //change the password of user
-    await User.update({password:hashedPass},{where:{email}});
+    await sequelize.transaction(async (t) => {
+        // update password
+        const [updatedRows] = await User.update(
+            { password: hashedPass },
+            { where: { email }, transaction: t }
+        );
+        if (!updatedRows) throw new ApiError("User not found", 404);
 
-    //after changing password destroy the otp
-    await otpData.destroy();
+        // delete OTP
+        await otpData.destroy({ transaction: t });
+    });
 }
 
 type LogBody = {
@@ -144,24 +151,29 @@ type LogBody = {
 export const login = async(res:Response,ip:string,body:LogBody) =>{
         const {email,password} = body;
 
-        //fetch user
+        //Fetch user
         const user = await User.findOne({where:{email},});
-        if(!user) throw new ApiError("User Not Found",404);
+        if(!user) throw new ApiError("Invalid credentials",401);
 
-        //verify password
+        //Verify password
         const matchPass = await bcrypt.compare(password,user.password);
         if(!matchPass){
-            //create logs
             await userLoginLog(user.user_id,'Failed',ip);
-            throw new ApiError("Credential not correct",401);
+            throw new ApiError("Invalid credentials",401);
         } 
 
-        //pass data for generating token
-        const userData ={ id: user.user_id, role: user.role, email: user.email }
+        //Payload for token
+        const userData ={ 
+            id: user.user_id, 
+            role: user.role, 
+            email: user.email 
+        }
 
-        //generate the both tokens
-        const newAccessToken = generateAccessToken(userData);
-        const newRefreshToken = generateRefreshToken(userData);
+        // Generate tokens (parallel ⚡)
+        const [newAccessToken, newRefreshToken] = await Promise.all([
+            generateAccessToken(userData),
+            generateRefreshToken(userData),
+        ]);
 
         const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
@@ -182,7 +194,8 @@ export const login = async(res:Response,ip:string,body:LogBody) =>{
             sameSite:"strict",
             maxAge:7 * 24 * 60 * 60 * 1000
         });
-
+        
+        //Response
         const data = {
             name:user.name,
             email:user.email,
@@ -195,44 +208,55 @@ export const login = async(res:Response,ip:string,body:LogBody) =>{
 
 export const refresh = async(res:Response,refresh:string) =>{
 
-    //check secret key
-    const secret = process.env.REFRESH_TOKEN;
-    if(!secret) throw new ApiError("Secret Key is missing",401);
+    //Get secret key
+    const secret = getEnv('REFRESH_TOKEN');
 
-    //decode refresh token which gets from cookie
-    const decodeRefresh = jwt.verify(refresh,secret) as JwtPayload;
+    //Verify Token
+    let decodeRefresh: JwtPayload;
+    try {
+        decodeRefresh = jwt.verify(refresh, secret) as JwtPayload;
+    } catch (err) {
+        throw new ApiError("Invalid refresh token", 401);
+    }
 
-    //check refresh token inside DB
-    const storedToken = await RefreshToken.findOne({where:{user_id:decodeRefresh.id}});
+    //Find token in DB
+    const storedToken = await RefreshToken.findOne({
+        where:{user_id:decodeRefresh.id}}
+    );
     if(!storedToken) throw new ApiError("Invalid refresh token",401); 
 
-    //check token match
+    //Match token
     if(storedToken.token !== refresh){
-        throw new ApiError("Token not matched",401);
+        throw new ApiError("Invalid refresh token",401);
     }
 
-    //check Expiry date
+    //Expiry Token
     if(storedToken.expires_in<new Date(Date.now())){
-        throw new ApiError("Your token is expired",401);
+        throw new ApiError("Refresh token expired",401);
     }
 
+    //Payload for token
     const userData = {
         id:decodeRefresh.id,
         role:decodeRefresh.role,
         email:decodeRefresh.email
     }
 
-    //generate again token
-    const newAccessToken = generateAccessToken(userData);
-    const newRefreshToken = generateRefreshToken(userData);
+    // Generate tokens (parallel ⚡)
+    const [newAccessToken, newRefreshToken] = await Promise.all([
+        generateAccessToken(userData),
+        generateRefreshToken(userData),
+    ]);
 
-    //refresh token stored in Db
+    const tokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    
+    //Update token in DB
     await storedToken.update({
         token:newRefreshToken,
-        expires_in:new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+        expires_in:tokenExpiry
     });
 
-    //pass inside httpOnly cookie
+    //Secure Cookie
     res.cookie('refreshToken',newRefreshToken,{
         httpOnly:true,
         secure:true,
@@ -240,6 +264,7 @@ export const refresh = async(res:Response,refresh:string) =>{
         maxAge:7 * 24 * 60 * 60 * 1000
     });
 
+    //Response
     return {
         newAccessToken
     };

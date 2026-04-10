@@ -1,22 +1,12 @@
-import { loadEnv } from "./env";
-
-loadEnv();
-
-const requiredEnv = (key: string): string => {
-    const value = process.env[key];
-    if (!value) {
-        throw new Error(`Missing required environment variable: ${key}`);
-    }
-    return value;
-};
+import { getEnv } from "./env";
 
 const baseConfig = {
-    username: requiredEnv("DB_USER"),
-    password: requiredEnv("DB_PASS"),
-    database: requiredEnv("DB_NAME"),
-    host: requiredEnv("DB_HOST"),
-    port: Number(process.env.DB_PORT || 3306),
-    dialect: "mysql" as const,
+    username: getEnv("DB_USER"),
+    password: getEnv("DB_PASS"),
+    database: getEnv("DB_NAME"),
+    host: getEnv("DB_HOST"),
+    port: Number(getEnv("DB_PORT")),
+    dialect: "mysql",
     logging: false,
 };
 

@@ -1,15 +1,7 @@
-import { Model, Op, Sequelize } from "sequelize";
+import { Op, Sequelize } from "sequelize";
 import { User, VendorProfile } from "../models";
 import ApiError from "../utils/apiError";
 import { getValue } from "../utils/roleAssign";
-
-// export const getUsers = async() => { 
-//     const users = await User.findAll({
-//         attributes:['user_id','name','email','role'],
-//         order:[['role','ASC']],
-//     });
-//     return users;
-// }
 
 type userBody = {
     search?:string,
