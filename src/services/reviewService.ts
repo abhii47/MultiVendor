@@ -1,6 +1,7 @@
 import { Order, Orderitem, Review } from "../models";
 import ApiError from "../utils/apiError";
 import { deletefromS3 } from "../utils/s3Helper";
+import { deleteCache } from "../utils/cache";
 
 type reviewBody = {
     product_id:number,
@@ -36,6 +37,10 @@ export const postReview = async(userId:number,body:reviewBody,files?:Express.Mul
         is_verified_purchase:true,
         image_url
     });
+
+    //invalidate cache
+    await deleteCache('products:*');
+
     return review;
 }
 
@@ -60,6 +65,10 @@ export const deleteReview = async(userId:number,reviewId:number) => {
     }
 
     await review.destroy();
+
+    //invalidate cache
+    await deleteCache('products:*');
+
     return review;
 }
 

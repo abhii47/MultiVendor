@@ -2,6 +2,8 @@ import { Category, Product, Review, User, VendorProfile } from "../models";
 import ApiError from "../utils/apiError";
 import { Op, Sequelize } from "sequelize";
 import { deletefromS3, getImageUrl } from "../utils/s3Helper";
+import { deleteCache, getCache, setCache } from "../utils/cache";
+import logger from "../utils/logger";
 
 type createProductBody = {
     productId:number;
@@ -35,6 +37,7 @@ export const createProduct = async(body:createProductBody,userId:number,filekey:
         }
         //save in DB
         await updateProduct.save();
+        await deleteCache('products:*');
 
         const data = {
             id:updateProduct.product_id,
@@ -74,6 +77,7 @@ export const createProduct = async(body:createProductBody,userId:number,filekey:
             is_available:true,
             filename:filekey
         });
+        await deleteCache('products:*');
 
         const data = {
             id:product.product_id,
@@ -133,6 +137,7 @@ export const deleteProduct = async(productId:number,userId:number) => {
 
     //if exist then delete
     await product.destroy();
+    await deleteCache('products:*');
     
 }
 type getUserProductBody = {
@@ -147,6 +152,18 @@ type getUserProductBody = {
 export const getUserProducts = async(body:getUserProductBody) => {
     //destructure body
     const {search,category,min_price,max_price,sort,page=1,limit=5} = body;
+
+    //Cache key generation
+    const cacheKey = `products:${JSON.stringify(body)}`;
+
+    //Try to get data from cache
+    const cachedData = await getCache(cacheKey);
+    if(cachedData){
+        logger.info(`Cache hit for key: ${cacheKey}`);
+        return cachedData;
+    }else{
+        logger.info(`Cache miss for key: ${cacheKey}`);
+    }
 
     //where and order clause for filtering
     const whereCondition:any = {};
@@ -241,7 +258,12 @@ export const getUserProducts = async(body:getUserProductBody) => {
         return productData;
         })
     );
-    return {count,rows:updatedRows,page,limit};
+    const result = {count,rows:updatedRows,page,limit};
+
+    //Set data in cache for future requests
+    await setCache(cacheKey,result);
+
+    return result;
 }
 
 export default {createProduct,getProducts,deleteProduct,getUserProducts};
