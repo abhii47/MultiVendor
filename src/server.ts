@@ -7,6 +7,7 @@ import { requestLogger } from './middlewares/logMiddleware';
 import { startCronJobs } from './jobs/cronJobs';
 import { loadEnv } from './config/env';
 import { apiLimiter } from './middlewares/rateLimiter';
+import './workers/emailWorker';
 
 loadEnv();
 
