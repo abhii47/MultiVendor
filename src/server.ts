@@ -6,6 +6,7 @@ import errHandler from './middlewares/errorMiddleware';
 import { requestLogger } from './middlewares/logMiddleware';
 import { startCronJobs } from './jobs/cronJobs';
 import { loadEnv } from './config/env';
+import { apiLimiter } from './middlewares/rateLimiter';
 
 loadEnv();
 
@@ -15,6 +16,7 @@ const app = express();
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({extended:true}));
+app.use(apiLimiter);
 app.use(requestLogger);
 
 //Import Routes
