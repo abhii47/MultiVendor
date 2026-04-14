@@ -1,7 +1,5 @@
 import { Sequelize,Op } from "sequelize";
-import { User,Product,Order,Orderitem, Review, StripeCustomer } from "../models";
-// import { stripe } from "../config/stripe";
-// import ApiError from "../utils/apiError";
+import { User,Product,Order,Orderitem, Review } from "../models";
 
 export const adminDash = async() => {
     const totalUser = await User.count();
@@ -124,34 +122,6 @@ export const getTopRatedProducts = async() => {
     });
     return products;
 }
-
-//dummy just add old user in stripeCustomer table
-// export const oldUserInStripe = async() => {
-//     try {
-//         const user = await StripeCustomer.findAll({
-//             attributes:['user_id'],
-//         });
-//         const userIds = user.map(p=>p.user_id);
-
-//         const oldUser = await User.findAll({
-//             where:{user_id:{[Op.notIn]:userIds},role:3}
-//         });
-
-//         for(const user of oldUser){
-//             const createCustomer = await stripe.customers.create({
-//                 name:user.name,
-//                 email:user.email
-//             });
-//             await StripeCustomer.create({
-//                 stripe_customer_id:createCustomer.id,
-//                 user_id:user.user_id
-//             });
-//         }
-//         return true;
-//     } catch (err) {
-//         throw new ApiError("Converting doesn't happen",400);
-//     }
-// }
 
 
 

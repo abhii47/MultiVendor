@@ -3,14 +3,15 @@ import { changePasswordValidation, forgetPassVaidation, loginValidation, refresh
 import { register,login, refresh, logout, changePass, forgotPass, resetPassword } from "../controllers/authController";
 import {validationError} from '../middlewares/validationMiddleware';
 import Auth from "../middlewares/authMiddleware";
+import { authLimiter } from "../middlewares/rateLimiter";
 
 const router = Router();
 
 router.post('/register',registerValidation,validationError,register);
-router.post('/forget-password',forgetPassVaidation,validationError,forgotPass);
+router.post('/forget-password',authLimiter,forgetPassVaidation,validationError,forgotPass);
 router.post('/reset-password',resetPassValidation,validationError,resetPassword);
-router.post('/login',loginValidation,validationError,login);
-router.post('/refresh-token',refreshValidation,validationError,refresh);
+router.post('/login',authLimiter,loginValidation,validationError,login);
+router.post('/refresh-token',authLimiter,refreshValidation,validationError,refresh);
 router.post('/change-password',Auth,changePasswordValidation,validationError,changePass);
 router.post('/logout',Auth,logout);
 
