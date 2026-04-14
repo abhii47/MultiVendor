@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import ApiError from './apiError';
 import { getEnv, loadEnv } from '../config/env';
+import logger from './logger';
 
 loadEnv();
 
@@ -29,9 +30,29 @@ export const sendOtpEmail = async(to:string,otp:number) =>{
                   </div>
                   <p style="font-size:16px">your otp is <b>${otp}</b>.It is valid for 5 minutes</p>`
         });
-        console.log("✅ Email sent:", to);
+        logger.info("✅ Email sent:",{to});
     } catch (err: unknown) {
-        const errorMessage = err instanceof Error ? err.message : "Unknown email provider error";
-        console.error("❌ Nodemailer Error:", errorMessage);
+        const errorMessage = err instanceof ApiError ? err.message : "Unknown email provider error";
+        logger.error("❌ Nodemailer Error:", errorMessage);
+    }
+}
+
+export const sendWelcomeEmail = async(to:string,name:string) => {
+    try {
+        await transporter.sendMail({
+            to,
+            from: senderEmail,
+            subject:'Welcome to Our Platform!',
+            html:`<div style="background-color:black;padding:2px 4px;border-radius:4px">
+                    <center>
+                        <h1 style="font-size:24px;color:green">REGISTRATION</h1>
+                    </center>
+                  </div>
+                  <p style="font-size:16px"><b><span style="color:red">${name}</span>WELCOME YOUR REGISTRATION SUCCESS</b></p>`
+        });
+        logger.info("✅ Welcome email sent:",{to});
+    } catch (err:any) {
+        const errorMessage = err instanceof ApiError ? err.message : "Unknown email provider error";
+        logger.error("❌ Nodemailer Error:", errorMessage);
     }
 }

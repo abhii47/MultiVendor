@@ -7,10 +7,11 @@ import sequelize from "../config/db";
 import {getValue, roles} from "../utils/roleAssign";
 import jwt,{ JwtPayload } from "jsonwebtoken";
 import { userLoginLog } from "../utils/loginLog";
-import { sendOtpEmail } from "../utils/sendEmail";
+import { sendOtpEmail, sendWelcomeEmail } from "../utils/sendEmail";
 import { createCustomer } from "./stripeService";
 import logger from "../utils/logger";
 import { getEnv } from "../config/env";
+import { emailQueue } from "../queues/emailQueue";
 
 type RegBody = {
     name:string,
@@ -72,6 +73,8 @@ export const register = async(body:RegBody) =>{
         role:user.role,
     }
 
+    await emailQueue.add("sendWelcomeEmail",{ email:user.email,name:user.name });
+
     return data
 }
 
@@ -96,11 +99,7 @@ export const forgetPass = async(email:string,otp:number) =>{
         expires_in:expiry
     });
 
-    setImmediate(() => {
-        sendOtpEmail(email, otp).catch(err => {
-            console.error("Email failed:", err.message)
-        });
-    });
+    await emailQueue.add("sendOtpEmail",{ email,otp });
 } 
 
 type setPassBody = {
