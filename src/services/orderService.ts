@@ -1,4 +1,4 @@
-import { Op, Sequelize, Transaction } from "sequelize";
+import { Op, Sequelize } from "sequelize";
 import { Cart, Cartitem, Coupon, Couponitem, CouponUsage, Order,Orderitem, Product, StripeCustomer } from "../models";
 import ApiError from "../utils/apiError";
 import sequelize from "../config/db";
