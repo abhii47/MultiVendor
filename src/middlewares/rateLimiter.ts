@@ -11,3 +11,15 @@ export const apiLimiter = rateLimit({
     standardHeaders:true,
     legacyHeaders:false,
 });
+
+export const authLimiter = rateLimit({
+    windowMs:1*60*1000,
+    max:5,
+    message:{
+        success:false,
+        message:"Too many login attempts from this IP, please try again after 1 minute",
+    },
+    statusCode:429,
+    standardHeaders:true,
+    legacyHeaders:false,
+});
