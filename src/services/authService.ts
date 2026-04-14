@@ -1,17 +1,14 @@
 import { Response } from "express";
-import { Otp, RefreshToken,StripeCustomer,User} from "../models";
+import { Otp, RefreshToken,User} from "../models";
 import { generateAccessToken,generateRefreshToken} from "../utils/generator";
 import bcrypt from 'bcrypt';
 import ApiError from "../utils/apiError";
 import sequelize from "../config/db";
-import {getValue, roles} from "../utils/roleAssign";
+import { roles } from "../utils/roleAssign";
 import jwt,{ JwtPayload } from "jsonwebtoken";
 import { userLoginLog } from "../utils/loginLog";
-import { sendOtpEmail, sendWelcomeEmail } from "../utils/sendEmail";
-import { createCustomer } from "./stripeService";
-import logger from "../utils/logger";
 import { getEnv } from "../config/env";
-import { emailQueue } from "../queues/emailQueue";
+import { emailQueue, stripeQueue } from "../queues/Queue";
 
 type RegBody = {
     name:string,
@@ -47,33 +44,25 @@ export const register = async(body:RegBody) =>{
         return user;
     });
 
-    // Create Customer On Stripe 
-    let stripe_customer_id: string | null = null;
-    if(user.role === getValue('user')){
-        setImmediate(async () => {
-            try {
-                const customer = await createCustomer(user.name,user.email);
+    // Add job to stripe queue
+    await stripeQueue.add("createStripeCustomer",{
+        user_id: user.user_id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+    });
 
-                //save that customer's stripe id in DB
-                await StripeCustomer.create({
-                    stripe_customer_id:customer.id,
-                    user_id:user.user_id,
-                });
-                // stripe_customer_id = stripe_customer.stripe_customer_id;
-                logger.info(`Stripe customer created for user ${user.email}: ${customer.id}`);
-            } catch (err) {
-                logger.error("Stripe background job failed:", err);
-            }
-        });
-    }
+    //Add job to email queue
+    await emailQueue.add("sendWelcomeEmail",{ 
+        email:user.email,
+        name:user.name 
+    });
 
     const data = {
         name:user.name,
         email:user.email,
         role:user.role,
     }
-
-    await emailQueue.add("sendWelcomeEmail",{ email:user.email,name:user.name });
 
     return data
 }
