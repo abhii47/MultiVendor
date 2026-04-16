@@ -57,6 +57,10 @@ const seedData = async () => {
     });
   } catch (err) {
     logger.error("Seed failed", { err });
+    process.exit(1);
+  } finally {
+    await sequelize.close(); 
+    process.exit(0);         
   }
 };
 
