@@ -5,13 +5,14 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "rm -rf dist && tsc",
-    "start": "npm run build && cross-env NODE_ENV=production node dist/server.js",
-    "dev": "npm run build && cross-env NODE_ENV=development node dist/server.js",
-    "db:migrate": "npm run build && sequelize-cli db:migrate --config dist/config/sequelizeCliConfig.js --migrations-path dist/migrations",
-    "db:migrate:undo": "npm run build && sequelize-cli db:migrate:undo --config dist/config/sequelizeCliConfig.js --migrations-path dist/migrations",
-    "db:migrate:status": "npm run build && sequelize-cli db:migrate:status --config dist/config/sequelizeCliConfig.js --migrations-path dist/migrations",
-    "seed": "npm run build && node dist/seeders/seed.js",
-    "prod": "npm run start"
+    "start": "node dist/server.js",
+    "seed": "node dist/seeders/seed.js",
+    "dev": "cross-env NODE_ENV=development npm run build && npm run db:migrate:dev && npm run seed && npm run start",
+    "docker": "cross-env NODE_ENV=production npm run db:migrate:prod && npm run seed && node dist/server.js",
+    "db:migrate:dev": "sequelize-cli db:migrate --env development --config dist/config/sequelizeCliConfig.js --migrations-path dist/migrations",
+    "db:migrate:undo:dev": "sequelize-cli db:migrate:undo --env development --config dist/config/sequelizeCliConfig.js --migrations-path dist/migrations",
+    "db:migrate:prod": "sequelize-cli db:migrate --env production --config dist/config/sequelizeCliConfig.js --migrations-path dist/migrations",
+    "db:migrate:undo:prod": "sequelize-cli db:migrate:undo --env production --config dist/config/sequelizeCliConfig.js --migrations-path dist/migrations"
   },
   "keywords": [],
   "author": "",

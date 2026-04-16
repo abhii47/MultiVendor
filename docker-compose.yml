@@ -1,4 +1,4 @@
-# docker-compose.yml
+# docker-compose.prod.yml
 version: "3.9"
 
 services:
@@ -6,24 +6,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: multivendor-app
+    container_name: multivendor-app-prod
     ports:
       - "3000:3000"
     env_file:
-      - .env.development
+      - .env.production
     environment:
-      # Use the host machine's database from inside the container.
       PORT: 3000
-      DB_HOST: host.docker.internal
-      DB_PORT: 3306
-      NODE_ENV: development
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-    volumes:
-      - .:/app              # 🔥 live code sync
-      - /app/node_modules   # prevent overwrite
-
-    command: npm run dev    # 🔥 run dev server (ts-node-dev)
-
+      NODE_ENV: production
     restart: unless-stopped
