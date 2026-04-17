@@ -7,3 +7,6 @@ export const emailQueue = new Queue("email",{
 export const stripeQueue = new Queue("stripe",{
     connection:createRedisConnection(),
 });
+export const receiptQueue = new Queue("receipt",{
+    connection:createRedisConnection(),
+});

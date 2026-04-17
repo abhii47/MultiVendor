@@ -8,16 +8,20 @@ import { startCronJobs } from './jobs/cronJobs';
 import { loadEnv } from './config/env';
 import { apiLimiter } from './middlewares/rateLimiter';
 import './workers/Worker';
+import path from 'path';
 
 loadEnv();
 
 const app = express();
 
+//static folder
+app.use('/receipts',express.static(path.join(__dirname,'receipts')));
+
 //Parsing middlewares
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({extended:true}));
-app.use(apiLimiter);
+app.use(apiLimiter);   //rate limiter
 app.use(requestLogger);
 
 //Import Routes
