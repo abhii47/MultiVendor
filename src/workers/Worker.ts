@@ -5,6 +5,7 @@ import logger from "../utils/logger";
 import { StripeCustomer, User } from "../models";
 import { getValue } from "../utils/roleAssign";
 import { createCustomer } from "../services/stripeService";
+import { createReceipt } from "../services/receiptService";
 
 //*************************************** All Functions **************************************
 type StripeJobData = {
@@ -38,22 +39,17 @@ export const emailWorker = new Worker("email", async(job) => {
     switch(job.name){
         case "sendOtpEmail":
             await sendOtpEmail(job.data.email,job.data.otp);
+            logger.info(`OTP email sent to ${job.data.email}`);
             break;
         case "sendWelcomeEmail":
             await sendWelcomeEmail(job.data.email,job.data.name);
+            logger.info(`Welcome email sent to ${job.data.email}`);
             break;
         default:
             logger.warn(`Unknown job type: ${job.name}`);
     }
 },{
     connection:createRedisConnection(),
-});
-
-emailWorker.on("completed",(job)=>{
-    console.log(`Job ${job.id} completed successfully.`);
-});
-emailWorker.on("failed",(job,err)=>{
-    console.error(`Job ${job?.id} failed:`, err);
 });
 
 //*************************************** Stripe Worker ****************************************
@@ -63,6 +59,7 @@ export const stripeWorker = new Worker("stripe", async(job) => {
     switch(job.name){
         case "createStripeCustomer":
             await createStripeCustomer(job.data);
+            logger.info(`Stripe customer creation job completed for user ${job.data.email}`);
             break;
         default:
             logger.warn(`Unknown job type: ${job.name}`);
@@ -70,9 +67,19 @@ export const stripeWorker = new Worker("stripe", async(job) => {
 },{
     connection:createRedisConnection(),
 });
-stripeWorker.on("completed",(job)=>{
-    console.log(`Job ${job.id} completed successfully.`);
-});
-stripeWorker.on("failed",(job,err)=>{
-    console.error(`Job ${job?.id} failed:`, err);
+
+//**************************************** Receipt Worker ******************************************
+export const receiptWorker = new Worker("receipt",async(job) => {
+    console.log("Processing Job...",job.id);
+
+    switch(job.name){
+        case "createReceipt":
+            await createReceipt(job.data.orderID);
+            logger.info(`Receipt creation job completed for order ${job.data.orderID}`);
+            break;
+        default:
+            logger.warn(`Unknown job type: ${job.name}`);
+    }
+},{
+    connection:createRedisConnection(),
 });
