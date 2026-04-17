@@ -6,6 +6,7 @@ import { createCharge, partialRefundCharge, refundCharge, saveCardToCustomer } f
 import UserCard from "../models/userCardModel";
 import Stripe from "stripe";
 import { createRefund, createRefunditem } from "./refundService";
+import { emailQueue, receiptQueue } from "../queues/Queue";
 
 enum OrderStatus {
     PENDING = 'Pending',
@@ -325,6 +326,11 @@ export const createPayment = async(userId:number,body:paymentBody) => {
                     transaction:t
                 }
             );
+
+            //add job for receipt
+            await receiptQueue.add('createReceipt',{
+                orderID:order.order_id
+            });
 
             // update the order status
             order.charge_id = charge.id,

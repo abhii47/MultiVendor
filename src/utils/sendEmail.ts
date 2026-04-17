@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer';
 import ApiError from './apiError';
 import { getEnv, loadEnv } from '../config/env';
 import logger from './logger';
+import path from 'path';
 
 loadEnv();
 
@@ -51,6 +52,26 @@ export const sendWelcomeEmail = async(to:string,name:string) => {
                   <p style="font-size:16px"><b><span style="color:red">${name}</span>WELCOME YOUR REGISTRATION SUCCESS</b></p>`
         });
         logger.info("✅ Welcome email sent:",{to});
+    } catch (err:any) {
+        const errorMessage = err instanceof ApiError ? err.message : "Unknown email provider error";
+        logger.error("❌ Nodemailer Error:", errorMessage);
+    }
+}
+
+export const sendReceiptEmail = async(to:string,filepath:string) => {
+    try {
+        await transporter.sendMail({
+            to,
+            from: senderEmail,
+            subject:'Your Order Receipt',
+            text:'Thank you for your order! Please find your receipt attached.',
+            attachments:[
+                {
+                    filename:path.basename(filepath),
+                    path:filepath,
+                }
+            ]
+        })
     } catch (err:any) {
         const errorMessage = err instanceof ApiError ? err.message : "Unknown email provider error";
         logger.error("❌ Nodemailer Error:", errorMessage);

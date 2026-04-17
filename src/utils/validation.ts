@@ -33,7 +33,7 @@ export const registerValidation = [
     .isInt().withMessage("Role must be integer 2:Vendor 3:User")
 ]
 
-export const forgetPassVaidation = [
+export const forgetPassValidation = [
     body('email')
     .notEmpty().withMessage("email is required")
     .trim().normalizeEmail()
@@ -147,39 +147,7 @@ export const createCategoryValidation = [
     .isString().withMessage('category must be string'),
 ]
 
-
 //*************************************** Product Validation ****************************************
-
-// export const createProductValidation = [
-//     body('name')
-//     .notEmpty().withMessage('Name is required')
-//     .bail()
-//     .isString().withMessage('Name must be string'),
-
-//     body('category')
-//     .notEmpty().withMessage('Category is required')
-//     .bail().toInt()
-//     .isInt().withMessage("Category must be integer"),
-
-//     body('price')
-//     .notEmpty().withMessage("Price is required")
-//     .bail().toInt()
-//     .isInt().withMessage('Price must be integer')
-//     .custom((value)=>{
-//         if(value<1)throw new ApiError("Price value can't be negative",422);
-//         return true;
-//     }),
-
-//     body('quantity')
-//     .notEmpty().withMessage("Qauntity is required")
-//     .bail().toInt()
-//     .isInt().withMessage('Qauntity must be integer')
-//     .custom((value)=>{
-//         if(value<1)throw new ApiError("Stock value can't be negative",422);
-//         return true;
-//     }),
-
-// ]
 
 export const updateProductValidation = [
     body('productId')
@@ -256,7 +224,6 @@ export const addCartValidation = [
     .isInt({min:1}).withMessage("Quantity must be integer")
 ]
 
-
 //***************************************** User Validation *******************************************
 
 export const getUsersValidation = [
@@ -315,34 +282,6 @@ export const createCouponValidation = [
 ]
 
 //**************************************** Order Validation ************************************************
-// export const addcardValidation = [
-//     body('cardNumber')
-//     .notEmpty().withMessage('Card number is required')
-//     .bail()
-//     .isLength({min:16,max:16}).withMessage("Card Number is invalid"),
-
-//     body('expMonth')
-//     .notEmpty().withMessage("month expiry is required")
-//     .bail()
-//     .isInt({min:1,max:12})
-//     .withMessage('Invalid Month'),
-
-//     body('expYear')
-//     .notEmpty().withMessage("year expiry is required")
-//     .bail()
-//     .custom((value)=>{
-//         const currentyear = new Date().getFullYear();
-
-//         if(value<currentyear){
-//             throw new Error("Expiry year cannot be in the past");
-//         }
-//         return true;
-//     }),
-
-//     body('cvc')
-//     .notEmpty().withMessage("cvc is required")
-//     .isLength({min:3,max:3}).withMessage('Invalid cvc')
-// ]
 
 export const createPaymentValidation = [
     body('orderId')
