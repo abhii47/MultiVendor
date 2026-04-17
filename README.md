@@ -31,6 +31,7 @@
 | 💳 Payments    | Stripe                            |
 | ☁️ Storage     | AWS S3 (via multer-s3)            |
 | 📧 Email       | Nodemailer                        |
+| 🖨️ PDF Gen    | pdfkit                            |
 | 📜 Logging     | Winston + CloudWatch              |
 | ⏰ Scheduler   | node-cron                         |
 | 📬 Queue       | BullMQ + Redis (ioredis)          |
@@ -351,6 +352,7 @@ npm run seed
 | `email` | `sendOtpEmail` | Send OTP email via Nodemailer |
 | `email` | `sendWelcomeEmail` | Send welcome email to new users |
 | `stripe` | `createStripeCustomer` | Create Stripe customer for new users (role 3) |
+| `receipt` | `createReceipt` | Generate PDF receipt and email to customer |
 
 ---
 
